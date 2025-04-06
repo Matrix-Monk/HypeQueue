@@ -26,7 +26,7 @@ model User {
   password  String?  // Not required when login with google
   rooms     Room[]   
 
-
+ 
   accounts  Account[] //  Required for next-auth logins
   sessions  Session[] //  Required for session management
 }
@@ -87,13 +87,19 @@ model Song {
   title     String
   artist    String
   url       String
+  extractedId String
+  type      String
+  thumbnail String?
+  duration  String?
   roomId    String
+  createdAt DateTime @default(now())
   room      Room    @relation(fields: [roomId], references: [id], onDelete: Cascade) // Songs gets deleted when room is deleted
   votes     Vote[]
 }
 
 model Vote {
   id      String  @id @default(uuid())
+  votes    Int
   songId  String
   song    Song    @relation(fields: [songId], references: [id], onDelete: Cascade) //  Votes gets deleted when song is deleted
   guestId String

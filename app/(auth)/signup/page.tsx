@@ -1,7 +1,7 @@
 "use client";
 
-import FooterAuth from "@/app/components/FooterAuth";
-import NavbarAuth from "@/app/components/NavbarAuth";
+import FooterAuth from "@/components/FooterAuth";
+import NavbarAuth from "@/components/NavbarAuth";
 import { Button } from "@/components/ui/button";
 import { GanttChart, Loader } from "lucide-react";
 import { signIn } from "next-auth/react";

@@ -1,10 +1,10 @@
 import React from 'react'
-import Appbar from '../components/Appbar'
+import Appbar from '../../components/Appbar'
 
 const page = () => {
   return (
     <div>
-      <Appbar/>
+      <Appbar />
     </div>
   )
 }

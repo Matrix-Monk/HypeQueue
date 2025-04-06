@@ -4,7 +4,7 @@ import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import bcrypt from "bcryptjs";
 
-import { prisma } from "../../../db/prisma";
+import { prisma } from "../../../../lib/prisma";
 
 
 declare module "next-auth" {
