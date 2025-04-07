@@ -25,6 +25,8 @@ model User {
   updatedAt DateTime @updatedAt
   password  String?  // Not required when login with google
   rooms     Room[]   
+   hostVotes Vote[]   @relation("HostVotes")
+  userVotes Vote[]   @relation("UserVotes")
 
  
   accounts  Account[] //  Required for next-auth logins
@@ -100,13 +102,23 @@ model Song {
 model Vote {
   id      String  @id @default(uuid())
   votes    Int
+
   songId  String
   song    Song    @relation(fields: [songId], references: [id], onDelete: Cascade) //  Votes gets deleted when song is deleted
-  guestId String
-  guest   Guest  @relation(fields: [guestId], references: [id], onDelete: Cascade) //  Votes deleted when guest leaves
+
+  guestId String?
+  guest   Guest?  @relation(fields: [guestId], references: [id], onDelete: Cascade) //  Votes deleted when guest leaves
+
+  hostId  String?  // if the vote is from the room host
+  host    User?    @relation("HostVotes", fields: [hostId], references: [id], onDelete: Cascade)
+
+  userId  String?  // if the vote is from a signed-in user (not host)
+  user    User?    @relation("UserVotes", fields: [userId], references: [id], onDelete: Cascade) 
+
+  @@unique([songId, hostId])
+  @@unique([songId, userId])
+  @@unique([songId, guestId])
+
+
 }
 
-enum Provider{
-  Google
-  Email
-}
