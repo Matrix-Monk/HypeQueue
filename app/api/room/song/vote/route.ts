@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma"; // adjust this import to your project structure
+import { prisma } from "@/lib/prisma"; 
 import z from "zod";
 
 const voteSchema = z
@@ -16,7 +16,7 @@ const voteSchema = z
     },
     {
       message: "Exactly one of hostId, userId, or guestId must be provided zod",
-      path: ["hostId", "userId", "guestId"], // can appear on all three fields
+      path: ["hostId", "userId", "guestId"], 
     }
   );
 

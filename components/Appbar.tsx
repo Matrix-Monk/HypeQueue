@@ -1,6 +1,5 @@
 "use client"
 
-
 import { signIn, signOut, useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation';
 import React, { useEffect } from 'react'

@@ -1,13 +1,14 @@
-import { Button } from '@/components/ui/button';
-import { Disc3 } from 'lucide-react';
-import Link from 'next/link';
-import React from 'react'
+import { Button } from "@/components/ui/button";
+import { Disc3 } from "lucide-react";
+import { signOut } from "next-auth/react";
+import Link from "next/link";
+import React from "react";
 
 interface NavbarAuthProps {
-  type: "signin" | "signup";
+  type: "signin" | "signup" | "logout";
 }
 
-const NavbarAuth = ({ type }: NavbarAuthProps) => {
+const Navbar = ({ type }: NavbarAuthProps) => {
   return (
     <nav className="relative z-10 p-6 flex justify-between items-center backdrop-blur-md bg-black/20">
       <Link href="/">
@@ -28,6 +29,14 @@ const NavbarAuth = ({ type }: NavbarAuthProps) => {
             Sign Up
           </Button>
         </Link>
+      ) : type === "logout" ? (
+        <Button
+          onClick={() => signOut({ callbackUrl: "/" })}
+          variant="outline"
+          className="bg-rose-500/10 text-rose-100 hover:bg-rose-500/20 border-rose-500/30"
+        >
+          LogOut
+        </Button>
       ) : (
         <Link href={"/signin"}>
           <Button
@@ -42,4 +51,4 @@ const NavbarAuth = ({ type }: NavbarAuthProps) => {
   );
 };
 
-export default NavbarAuth
+export default Navbar;

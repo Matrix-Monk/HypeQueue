@@ -10,7 +10,7 @@ export default function Home() {
         className="absolute inset-0 z-0"
         style={{
           backgroundImage:
-            "url('https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=2070&auto=format&fit=crop')",
+            "url('/img1.jpeg')",
           backgroundSize: "cover",
           backgroundPosition: "center",
           filter: "brightness(0.3)",

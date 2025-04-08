@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { createRoomSchema } from "@/lib/validation";
 
-const createRoomSchema = z.object({
-  roomName: z.string().min(1, { message: "Room name is required" }),
-  hostId: z.string().min(1, { message: "User ID is required" }),
-});
+// const createRoomSchema = z.object({
+//   roomName: z.string().min(1, { message: "Room name is required" }),
+//   hostId: z.string().min(1, { message: "User ID is required" }),
+// });
 
 const getRoomSchema = z.object({
   hostId: z.string().min(1, { message: "User ID is required" }),
