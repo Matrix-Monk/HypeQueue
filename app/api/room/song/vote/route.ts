@@ -18,7 +18,15 @@ const voteSchema = z
       message: "Exactly one of hostId, userId, or guestId must be provided zod",
       path: ["hostId", "userId", "guestId"], 
     }
-  );
+);
+  
+
+const deleteVoteSchema = z.object({
+  songId: z.string().min(1, { message: "Please select a room" }),
+  userId: z.string().optional(),
+  hostId: z.string().optional(),
+  guestId: z.string().optional(),
+});
 
 export async function POST(req: NextRequest) {
   try {
@@ -88,10 +96,14 @@ export async function POST(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const body = await req.json();
-    const data = voteSchema.parse(body);
+    const url = new URL(req.url);
+    const { songId, userId, hostId, guestId } = deleteVoteSchema.parse({
+      songId: url.searchParams.get("songId"),
+      userId: url.searchParams.get("userId") || undefined,
+      hostId: url.searchParams.get("hostId") || undefined,
+      guestId: url.searchParams.get("guestId") || undefined,
+    });
 
-    const { songId, hostId, userId, guestId } = data;
 
     const existingVote = await prisma.vote.findFirst({
       where: {

@@ -14,6 +14,9 @@ const songSchema = z.object({
 
 const getSongSchema = z.object({
   roomId: z.string().min(1, { message: "Please select a room" }),
+  userId: z.string().optional(),
+  hostId: z.string().optional(),
+  guestId: z.string().optional(),
 });
 
 export async function POST(req: NextResponse) {
@@ -48,7 +51,7 @@ export async function POST(req: NextResponse) {
         title,
         artist,
         thumbnail,
-        duration,
+        duration: duration?.toString() ?? null,
       },
     });
 
@@ -65,8 +68,8 @@ export async function POST(req: NextResponse) {
     );
   } catch (error) {
     return NextResponse.json(
-        {
-          error,
+      {
+        error,
         message: "Failed to add song to the queue",
       },
       { status: 500 }
@@ -76,8 +79,12 @@ export async function POST(req: NextResponse) {
 
 export async function GET(req: NextResponse) {
   try {
-    const { roomId } = getSongSchema.parse({
-      roomId: new URL(req.url).searchParams.get("roomId"),
+    const url = new URL(req.url);
+    const { roomId, userId, hostId, guestId } = getSongSchema.parse({
+      roomId: url.searchParams.get("roomId"),
+      userId: url.searchParams.get("userId") || undefined,
+      hostId: url.searchParams.get("hostId") || undefined,
+      guestId: url.searchParams.get("guestId") || undefined,
     });
 
     if (!roomId) {
@@ -87,11 +94,49 @@ export async function GET(req: NextResponse) {
       );
     }
 
-    const songs = await prisma.song.findMany({
+    const rawSongs = await prisma.song.findMany({
       where: {
         roomId,
       },
+      include: {
+        _count: {
+          select: { votes: true }, // 👈 Get count of votes per song
+        },
+      },
     });
+
+    const voterFilter = hostId
+      ? { hostId }
+      : userId
+      ? { userId }
+      : guestId
+      ? { guestId }
+      : null;
+
+    let votedSongIds: string[] = [];
+
+    if (voterFilter) {
+      const votes = await prisma.vote.findMany({
+        where: voterFilter,
+        select: { songId: true },
+      });
+      votedSongIds = votes.map((vote) => vote.songId);
+    }
+
+    const songs = rawSongs.map((song) => ({
+      id: song.id,
+      title: song.title,
+      artist: song.artist,
+      url: song.url,
+      extractedId: song.extractedId,
+      type: song.type,
+      thumbnail: song.thumbnail,
+      duration: song.duration,
+      roomId: song.roomId,
+      createdAt: song.createdAt,
+      voteCount: song._count.votes,
+      isVoted: votedSongIds.includes(song.id),
+    }));
 
     return NextResponse.json(
       {

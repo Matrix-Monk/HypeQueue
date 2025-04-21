@@ -115,9 +115,9 @@ model Vote {
   userId  String?  // if the vote is from a signed-in user (not host)
   user    User?    @relation("UserVotes", fields: [userId], references: [id], onDelete: Cascade) 
 
-  @@unique([songId, hostId])
-  @@unique([songId, userId])
-  @@unique([songId, guestId])
+  // @@unique([songId, hostId])
+  // @@unique([songId, userId])
+  // @@unique([songId, guestId])
 
 
 }
