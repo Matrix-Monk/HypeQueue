@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && prisma migrate deploy && next build",
+    "postinstall": "echo Skipping Prisma generate, handled in build",
     "start": "next start",
     "lint": "next lint"
   },
