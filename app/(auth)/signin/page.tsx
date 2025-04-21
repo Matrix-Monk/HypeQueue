@@ -126,7 +126,7 @@ export default function SignInPage() {
           </Button>
 
           <p className="text-center text-sm text-zinc-400 mt-4">
-            Don't have an account?{" "}
+            {"Don't have an account? "}
             <Link href="/signup" className="text-rose-400 hover:text-rose-300">
               Sign up here
             </Link>

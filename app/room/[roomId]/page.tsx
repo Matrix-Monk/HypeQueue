@@ -1,46 +1,32 @@
-"use server"
+import { prisma } from "@/lib/prisma";
 import RoomPageContent from "@/components/RoomPageContent";
-import React from 'react'
-import {prisma} from '@/lib/prisma'
+import React from "react";
 
-const page = async({
-  params,
-}: {
-  params: {
-    roomId: string;
-  };
-    }) => {
+// interface Props {
+//   params: {
+//     roomId: string;
+//   };
+// }
 
-    const { roomId } =  await params
+export default async function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
+  const { roomId } = await params;
 
+  const room = await prisma.room.findUnique({
+    where: {
+      id: roomId,
+    },
+  });
 
+  if (!room) {
+    console.log("Room not found");
+    return <div>Room not found</div>;
+  }
 
-    const room = await prisma.room.findUnique({
-        where: {
-            id : roomId
-        }
-    })
+  const { name, hostId } = room;
 
-    if (!room) {
-
-        console.log("Room not found")
-        return
-    }
-
-    console.log("from room page " + roomId)
-
-
-    const name = room.name
-
-    const hostId = room.hostId
-    
-
-    return (
-      <div>
-        <RoomPageContent roomId={roomId} name={name} hostId = {hostId} />
-      </div>
-    );
-};
-
-export default page
-
+  return (
+    <div>
+      <RoomPageContent roomId={roomId} name={name} hostId={hostId} />
+    </div>
+  );
+}

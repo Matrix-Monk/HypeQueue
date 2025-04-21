@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
 import Navbar from "@/components/Navbar";
-import { Music, Clock, ListPlus, History, Trash2 } from "lucide-react";
+import { Clock, Trash2 } from "lucide-react";
+import Image from "next/image";
 import YouTubePlayer from "./YoutubePlayer";
 import axios from "axios";
 
@@ -21,6 +22,12 @@ type Song = {
   createdAt: string;
   voteCount: number;
   isVoted: boolean;
+};
+
+type Room = {
+  id: string;
+  name: string;
+  hostId: string;
 };
 
 interface GetSongResponse {
@@ -40,13 +47,13 @@ export default function RoomPageContent({
   const { data: session } = useSession();
   const userId = session?.user?.id;
 
-  const [room, setRoom] = useState<any>(null);
+  const [room, setRoom] = useState<Room | null>(null);
 
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [upcomingSongs, setUpcomingSongs] = useState<Song[]>([]);
   const [youtubeUrl, setYoutubeUrl] = useState("");
 
-  const fetchSongs = async () => {
+  const fetchSongs = useCallback(async () => {
     try {
       console.log("fetch song called");
 
@@ -92,7 +99,7 @@ export default function RoomPageContent({
     } catch (err) {
       console.error("Error fetching songs", err);
     }
-  };
+  }, [roomId, userId, hostId, currentSong]);
 
   useEffect(() => {
     setRoom({
@@ -104,7 +111,7 @@ export default function RoomPageContent({
     if (roomId) {
       fetchSongs();
     }
-  }, [roomId]);
+  }, [roomId, name, hostId, fetchSongs]);
 
   const isHost = userId === room?.hostId;
 
@@ -249,7 +256,9 @@ export default function RoomPageContent({
                   className="bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-md flex gap-4 items-center justify-between hover:scale-[1.01] transition"
                 >
                   <div className="flex gap-4 items-center">
-                    <img
+                    <Image
+                      width={300}
+                      height={200}
                       src={song.thumbnail}
                       alt={song.title}
                       className="w-16 h-16 rounded-md object-cover"

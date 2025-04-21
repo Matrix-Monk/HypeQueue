@@ -1,4 +1,3 @@
-// components/CreateRoomModal.tsx
 "use client";
 
 import { useState } from "react";
@@ -8,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { createRoomSchema } from "@/lib/validation";
 import axios from "axios";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 type CreateRoomResponse = {
   message: string;
@@ -55,6 +55,10 @@ export default function CreateRoomModal({
     const data = response.data as CreateRoomResponse;
 
     const { roomId, message, name } = data;
+
+    toast.success(message, {
+      description: `Room "${name}" created successfully!`,
+    })
 
     router.push(`/room/${roomId}`);
   };

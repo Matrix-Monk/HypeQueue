@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { getYoutubeMetadata } from "@/lib/youtubeMetadata";
 
-var YT_REGEX =
+const YT_REGEX =
   /^(?:(?:https?:)?\/\/)?(?:www\.)?(?:m\.)?(?:youtu(?:be)?\.com\/(?:v\/|embed\/|watch(?:\/|\?v=))|youtu\.be\/)((?:\w|-){11})(?:\S+)?$/;
 
 const songSchema = z.object({
@@ -19,7 +19,7 @@ const getSongSchema = z.object({
   guestId: z.string().optional(),
 });
 
-export async function POST(req: NextResponse) {
+export async function POST(req: NextRequest) {
   try {
     const { roomId, url, type } = songSchema.parse(await req.json());
     console.log(roomId + " " + url);
@@ -77,7 +77,7 @@ export async function POST(req: NextResponse) {
   }
 }
 
-export async function GET(req: NextResponse) {
+export async function GET(req: NextRequest) {
   try {
     const url = new URL(req.url);
     const { roomId, userId, hostId, guestId } = getSongSchema.parse({
@@ -103,7 +103,19 @@ export async function GET(req: NextResponse) {
           select: { votes: true }, // 👈 Get count of votes per song
         },
       },
-    });
+    }) as Array<{
+      id: string;
+      title: string;
+      artist: string | null;
+      url: string;
+      extractedId: string | null;
+      type: string;
+      thumbnail: string | null;
+      duration: string | null;
+      roomId: string;
+      createdAt: Date;
+      _count: { votes: number };
+    }>;
 
     const voterFilter = hostId
       ? { hostId }
@@ -119,8 +131,8 @@ export async function GET(req: NextResponse) {
       const votes = await prisma.vote.findMany({
         where: voterFilter,
         select: { songId: true },
-      });
-      votedSongIds = votes.map((vote) => vote.songId);
+      }) as { songId: string }[];
+      votedSongIds = votes.map((vote: { songId: string }) => vote.songId);
     }
 
     const songs = rawSongs.map((song) => ({

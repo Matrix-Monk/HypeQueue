@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createRoomSchema } from "@/lib/validation";
@@ -12,7 +12,7 @@ const getRoomSchema = z.object({
   hostId: z.string().min(1, { message: "User ID is required" }),
 });
 
-export async function POST(req: NextResponse) {
+export async function POST(req: NextRequest) {
   try {
     const { roomName, hostId } = createRoomSchema.parse(await req.json());
 
@@ -42,7 +42,7 @@ export async function POST(req: NextResponse) {
   }
 }
 
-export async function GET(req: NextResponse) {
+export async function GET(req: NextRequest) {
   try {
     const { hostId } = getRoomSchema.parse({
       hostId: new URL(req.url).searchParams.get("hostId"),

@@ -69,11 +69,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Step 3: Create vote
-    let voteData: any = {
-      songId,
-      votes: 1,
-    };
+    // Step 3: Create vote                                  Have a look here
+   const voteData: {
+     songId: string;
+     votes: number;
+     hostId?: string;
+     userId?: string;
+     guestId?: string;
+   } = {
+     songId,
+     votes: 1,
+   };
 
     if (hostId) voteData.hostId = hostId;
     if (userId) voteData.userId = userId;
