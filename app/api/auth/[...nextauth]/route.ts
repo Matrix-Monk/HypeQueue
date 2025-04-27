@@ -47,7 +47,6 @@ const handler = NextAuth({
           throw new Error("Missing email or password");
         }
 
-        console.log(credentials.email + "1");
 
         // check for user in the database
         const user = await prisma.user.findUnique({
@@ -57,7 +56,6 @@ const handler = NextAuth({
 
         if (!user) throw new Error("Invalid email! Please check your email");
 
-        console.log(user + "2");
 
         if (!user.password) throw new Error("Password is missing for the user");  // Users Signup with google
 
@@ -83,7 +81,6 @@ const handler = NextAuth({
       if (session.user) {
         session.user.id = token.id as string;
       }
-      console.log("Session Data:", session);
       return session;
     },
   },

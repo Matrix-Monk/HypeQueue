@@ -8,6 +8,8 @@ import { useRouter } from "next/navigation";
 import { Plus } from "lucide-react";
 import CreateRoomModal from "@/components/CreateRoomModel";
 import axios from "axios";
+import { toast } from "sonner";
+
 
 interface Room {
   id: string;
@@ -42,6 +44,9 @@ export default function Dashboard() {
         const res = await axios.get(`/api/room/?hostId=${userId}`);
 
         console.log("fetched rooms" + res);
+
+        
+        toast.success("Event has been created.");
 
         const data = res.data as GetRoomResponse;
 

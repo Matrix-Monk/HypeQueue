@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
@@ -48,10 +48,11 @@ export default function RoomPageContent({
   const userId = session?.user?.id;
 
   const [room, setRoom] = useState<Room | null>(null);
-
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [upcomingSongs, setUpcomingSongs] = useState<Song[]>([]);
   const [youtubeUrl, setYoutubeUrl] = useState("");
+  const [usersInRoom, setUsersInRoom] = useState<string[]>([]); // New state to store users
+  const socketRef = useRef<WebSocket | null>(null); // WebSocket reference
 
   const fetchSongs = useCallback(async () => {
     try {
@@ -113,58 +114,115 @@ export default function RoomPageContent({
     }
   }, [roomId, name, hostId, fetchSongs]);
 
+
+  useEffect(() => {
+    if (!roomId || !userId) return;
+
+    const socket = new WebSocket(`ws://${window.location.host}`);
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      console.log("WebSocket connected");
+
+      socket.send(
+        JSON.stringify({
+          type: "JOIN_ROOM",
+          payload: {
+            roomId,
+            userId,
+          },
+        })
+      );
+    };
+
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      console.log("Received message:", message);
+      if (message.type === "USER_LIST") {
+        setUsersInRoom(message.payload);
+      }
+    };
+
+    socket.onclose = () => {
+      console.log("WebSocket disconnected");
+    };
+
+    socket.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+    return () => {
+      socket.close();
+    };
+  }, [roomId, userId]);
+  
+
+
+
   const isHost = userId === room?.hostId;
 
-  const handleAddToQueue = async () => {
-    if (!youtubeUrl) return;
+   const handleAddToQueue = async () => {
+     if (!youtubeUrl) return;
 
-    const response = await axios.post("/api/room/song", {
-      roomId,
-      url: youtubeUrl,
-      type: "youtube",
-    });
+     try {
+       const response = await axios.post("/api/room/song", {
+         roomId,
+         url: youtubeUrl,
+         type: "youtube",
+       });
 
-    if (response.status !== 200) {
-      console.log("Error while adding a song");
-    }
+       if (response.status !== 200) {
+         console.log("Error while adding a song");
+       } else {
+         console.log("Song added successfully");
 
-    console.log("song added successfully");
+         // Notify others via WebSocket (optional for live sync)
+         socketRef.current?.send(
+           JSON.stringify({
+             type: "SONG_ADDED",
+             payload: {
+               roomId,
+             },
+           })
+         );
+       }
+     } catch (err) {
+       console.error("Error while adding song", err);
+     }
 
-    setYoutubeUrl("");
-    fetchSongs();
-  };
+     setYoutubeUrl("");
+     fetchSongs();
+   };
+
 
   const handleVote = async (songId: string, isVoted: boolean) => {
     try {
       const payload =
         userId === hostId ? { hostId, songId } : { userId, songId };
-      
-      console.log("Sending DELETE vote with payload:", payload); 
 
       if (isVoted) {
-        // User already voted → delete vote
-        const response = await axios.request({
-          url: "/api/room/song/vote",
-          method: "DELETE",
-          params: payload,
-        });
-        if (response.status === 200) {
-          console.log("Vote removed");
-        }
+        await axios.delete("/api/room/song/vote", { params: payload });
+        console.log("Vote removed");
       } else {
-        // User hasn’t voted → create vote
-        const response = await axios.post("/api/room/song/vote", payload);
-        if (response.status === 201) {
-          console.log("Vote created");
-        }
+        await axios.post("/api/room/song/vote", payload);
+        console.log("Vote created");
       }
 
-      // Refetch updated song list
-      await fetchSongs();
+      // Optional: Notify via WebSocket
+      socketRef.current?.send(
+        JSON.stringify({
+          type: "VOTE_CHANGED",
+          payload: {
+            roomId,
+          },
+        })
+      );
+
+      fetchSongs();
     } catch (err) {
       console.error("Error while voting", err);
     }
   };
+
 
   return (
     <main className="min-h-screen relative text-white">
@@ -209,7 +267,7 @@ export default function RoomPageContent({
           <div className="w-full md:w-1/3 space-y-6 order-1 md:order-2">
             {/* Current Song */}
             <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/10 p-4 flex flex-col gap-4">
-              <YouTubePlayer url={currentSong?.url || ""} />
+              <YouTubePlayer url={currentSong?.url || ""} isHost />
               <div className="flex items-center gap-4">
                 <div className="space-y-1">
                   <h2 className="text-xl font-semibold text-white">
