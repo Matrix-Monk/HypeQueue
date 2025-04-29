@@ -1,12 +1,9 @@
+"use server";
+
 import { prisma } from "@/lib/prisma";
 import RoomPageContent from "@/components/RoomPageContent";
 import React from "react";
-
-// interface Props {
-//   params: {
-//     roomId: string;
-//   };
-// }
+import { toast } from "sonner";
 
 export default async function RoomPage({ params }: { params: Promise<{ roomId: string }> }) {
   const { roomId } = await params;
@@ -18,8 +15,8 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
   });
 
   if (!room) {
-    console.log("Room not found");
-    return <div>Room not found</div>;
+    toast.error("Room not found");
+    return
   }
 
   const { name, hostId } = room;

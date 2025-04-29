@@ -43,16 +43,20 @@ export default function Dashboard() {
       try {
         const res = await axios.get(`/api/room/?hostId=${userId}`);
 
-        console.log("fetched rooms" + res);
+        console.log("fetched rooms" + res.data?.message);
 
-        
-        toast.success("Event has been created.");
+        if (res.status !== 200) {
+          toast.error("Failed to fetch rooms");
+          return;
+        }
+
+        toast.success(res.data?.message);
 
         const data = res.data as GetRoomResponse;
 
-        setRooms(data.rooms); // assuming the endpoint returns { rooms: [...] }
+        setRooms(data.rooms); 
       } catch (err) {
-        console.error("Error fetching rooms", err);
+        toast.error(err as string || "Failed to fetch rooms");
       }
     };
 

@@ -4,30 +4,36 @@ interface ClientInfo {
   socket: WebSocket;
   roomId: string;
   userId: string;
+  userName: string;
 }
 
 const rooms: Record<string, ClientInfo[]> = {}; // { roomId: [clients...] }
 
 
 export function setupWebSocketServer(wss: WebSocketServer) {
-  console.log("WebSocket Server Initialized");
+  try {
+    console.log("WebSocket Server Initialized");
 
-  wss.on("connection", (socket, req) => {
-    console.log("New WebSocket Connection");
+    wss.on("connection", (socket, req) => {
+      console.log("New WebSocket Connection");
 
-    socket.on("message", (data) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        handleMessage(socket, msg);
-      } catch (error) {
-        console.error("Invalid WebSocket message", error);
-      }
+
+      socket.on("message", (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          handleMessage(socket, msg);
+        } catch (error) {
+          console.error("Invalid WebSocket message", error);
+        }
+      });
+
+      socket.on("close", () => {
+        handleDisconnect(socket);
+      });
     });
-
-    socket.on("close", () => {
-      handleDisconnect(socket);
-    });
-  });
+  } catch (error) {
+    console.error("Error setting up WebSocket server", error);
+  }
 }
 
 
@@ -35,19 +41,25 @@ function handleMessage(socket: WebSocket, msg: any) {
   const { type, payload } = msg;
 
   if (type === "JOIN_ROOM") {
-    const { roomId, userId } = payload;
+    const { roomId, userId, userName } = payload;
 
     if (!rooms[roomId]) {
       rooms[roomId] = [];
     }
 
-    rooms[roomId].push({ socket, roomId, userId });
+    rooms[roomId].push({ socket, roomId, userId, userName });
 
-    console.log(`User ${userId} joined room ${roomId}`);
+    console.log(`User ${userName} joined room ${roomId}`);
 
+    // ✅ FIXED HERE
     broadcastToRoom(roomId, {
       type: "USER_LIST",
-      payload: getRoomUserIds(roomId),
+      payload: getRoomUserNames(roomId),
+    });
+
+    broadcastToRoom(roomId, {
+      type: "USER_EVENT",
+      payload: { userName, action: "joined", timestamp: Date.now() },
     });
   }
 }
@@ -58,14 +70,19 @@ function handleDisconnect(socket: WebSocket) {
     const index = clients.findIndex((c) => c.socket === socket);
 
     if (index !== -1) {
-      const userId = clients[index].userId;
+      const { userId, userName } = clients[index];
       clients.splice(index, 1);
 
-      console.log(`User ${userId} disconnected from room ${roomId}`);
+      console.log(`User ${userName} disconnected from room ${roomId}`);
 
       broadcastToRoom(roomId, {
         type: "USER_LIST",
-        payload: getRoomUserIds(roomId),
+        payload: getRoomUserNames(roomId),
+      });
+
+      broadcastToRoom(roomId, {
+        type: "USER_EVENT",
+        payload: { userName, action: "left", timestamp: Date.now() },
       });
 
       if (clients.length === 0) {
@@ -76,7 +93,6 @@ function handleDisconnect(socket: WebSocket) {
     }
   }
 }
-
 function broadcastToRoom(roomId: string, message: any) {
   const clients = rooms[roomId];
   if (!clients) return;
@@ -90,10 +106,10 @@ function broadcastToRoom(roomId: string, message: any) {
   });
 }
 
-function getRoomUserIds(roomId: string): string[] {
+function getRoomUserNames(roomId: string): string[] {
   const clients = rooms[roomId];
   if (!clients) return [];
-  return clients.map((c) => c.userId);
+  return clients.map((c) => c.userName); 
 }
 
 

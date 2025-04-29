@@ -2,11 +2,12 @@
   "name": "hypequeue",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "next dev",
+    "dev": "ts-node server.ts",
     "build": "prisma generate && prisma migrate deploy && next build",
     "postinstall": "echo Skipping Prisma generate, handled in build",
-    "start": "next start",
+    "start": "NODE_ENV=production ts-node server.ts",
     "lint": "next lint"
   },
   "dependencies": {
@@ -48,6 +49,7 @@
     "mini-css-extract-plugin": "^2.9.2",
     "prisma": "^6.6.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
   }
 }

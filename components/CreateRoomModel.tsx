@@ -28,8 +28,11 @@ export default function CreateRoomModal({
   const [roomName, setRoomName] = useState("");
 
   const handleCreateRoom = async () => {
-    console.log("handleCreateRoom called");
-
+    if (!roomName) {
+      toast.error("Room name is required");
+      return;
+    }
+    
     if (roomName.trim() == "") {
       setRoomName("");
     }
@@ -48,7 +51,8 @@ export default function CreateRoomModal({
     });
 
     if (response.status !== 200) {
-      console.log("Failed to create room");
+
+      toast.error("Failed to create room");
       return;
     }
 
