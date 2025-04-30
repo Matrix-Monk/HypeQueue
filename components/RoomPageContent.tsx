@@ -9,23 +9,7 @@ import YouTubePlayer from "./YoutubePlayer";
 import axios from "axios";
 import { toast } from "sonner";
 import RoomNavbar from "./RoomNavbar";
-
-
-
-type Song = {
-  id: string;
-  title: string;
-  artist: string;
-  url: string;
-  type: string;
-  extractedId: string;
-  duration: number;
-  thumbnail: string;
-  roomId: string;
-  createdAt: string;
-  voteCount: number;
-  isVoted: boolean;
-};
+import { Song } from "@/lib/validation";
 
 type Room = {
   id: string;
@@ -44,7 +28,6 @@ type UserEvent = {
   timestamp: number;
 };
 
-
 export default function RoomPageContent({
   roomId,
   name,
@@ -62,17 +45,22 @@ export default function RoomPageContent({
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [upcomingSongs, setUpcomingSongs] = useState<Song[]>([]);
   const [youtubeUrl, setYoutubeUrl] = useState("");
-  const [usersInRoom, setUsersInRoom] = useState<string[]>([]); // New state to store users
+  const [usersInRoom, setUsersInRoom] = useState<string[]>([]);
   const [userEvents, setUserEvents] = useState<UserEvent[]>([]);
   const [showUserList, setShowUserList] = useState(false);
-  const socketRef = useRef<WebSocket | null>(null); // WebSocket reference
+  const socketRef = useRef<WebSocket | null>(null);
+
+  const sortSongs = (songs: Song[]) => {
+    return [...songs].sort((a, b) => {
+      if (b.voteCount !== a.voteCount) {
+        return b.voteCount - a.voteCount;
+      }
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+  };
 
   const fetchSongs = useCallback(async () => {
     try {
-      console.log("fetch song called");
-
-      console.log(roomId);
-
       const res = await axios.get(`/api/room/song`, {
         params: {
           roomId,
@@ -81,18 +69,12 @@ export default function RoomPageContent({
       });
 
       if (res.status !== 200) {
-        console.log("Error while fetching the song");
         toast.error(res.data.message);
         return;
       }
 
-      toast.success(res.data.message);
-
-      console.log("fetched songs" + JSON.stringify(res));
-
       const data = res.data as GetSongResponse;
-
-      const songs = data.songs as Song[];
+      const songs = data.songs;
 
       if (!songs || songs.length === 0) {
         setCurrentSong(null);
@@ -100,116 +82,127 @@ export default function RoomPageContent({
         return;
       }
 
-      const current = currentSong ?? songs[0];
-
-      const rest = songs.filter((song) => song.id !== current.id);
-
-      const sortedUpcoming = [...rest].sort((a, b) => {
-        if (b.voteCount !== a.voteCount) {
-          return b.voteCount - a.voteCount;
-        }
-        return (
-          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-        );
-      });
-
-      setCurrentSong(current);
-      setUpcomingSongs(sortedUpcoming);
+      const newCurrent = songs[0];
+      const rest = songs.slice(1);
+      setCurrentSong(newCurrent);
+      setUpcomingSongs(sortSongs(rest));
     } catch (err) {
       console.error("Error fetching songs", err);
       toast.error("Error fetching songs");
     }
-  }, [roomId, userId, hostId, currentSong]);
+  }, [roomId, userId, hostId]);
 
   useEffect(() => {
-    setRoom({
-      id: roomId,
-      name,
-      hostId,
-    });
-
-    if (roomId) {
-      fetchSongs();
-    }
+    setRoom({ id: roomId, name, hostId });
+    if (roomId) fetchSongs();
   }, [roomId, name, hostId, fetchSongs]);
 
   useEffect(() => {
     if (status !== "authenticated" || !roomId || !userId) return;
 
-    if (status === "authenticated") {
-      const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-      const socket = new WebSocket(
-        `${protocol}://${window.location.host}/ws/room`
+    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+    const socket = new WebSocket(
+      `${protocol}://${window.location.host}/ws/room`
+    );
+    socketRef.current = socket;
+
+    socket.onopen = () => {
+      socket.send(
+        JSON.stringify({
+          type: "JOIN_ROOM",
+          payload: { roomId, userId, userName },
+        })
       );
-      socketRef.current = socket;
+    };
 
-      socket.onopen = () => {
-        console.log("WebSocket connected");
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
 
-        if (socketRef.current?.readyState === WebSocket.OPEN) {
-          socketRef.current.send(
-            JSON.stringify({
-              type: "JOIN_ROOM",
-              payload: { roomId, userId, userName },
-            })
-          );
-        }
-      };
+      if (message.type === "USER_LIST") {
+        setUsersInRoom(message.payload);
+      }
 
-      socket.onmessage = (event) => {
-        const message = JSON.parse(event.data);
-        console.log("Received message:", message);
-        if (message.type === "USER_LIST") {
-          setUsersInRoom(message.payload);
-        }
-        
-         if (message.type === "USER_EVENT") {
-           const { userName, action, timestamp } = message.payload;
-           setUserEvents((prev) => [
-             { userName, action, timestamp },
-             ...prev.slice(0, 9),
-           ]);
-         }
+      if (message.type === "USER_EVENT") {
+        const { userName, action, timestamp } = message.payload;
+        setUserEvents((prev) => [
+          { userName, action, timestamp },
+          ...prev.slice(0, 9),
+        ]);
+      }
 
-      };
+      if (message.type === "SONG_ADDED") {
+        const newSong = message.payload.song as Song;
+        setUpcomingSongs((prev) => {
+          if (
+            prev.some((s) => s.id === newSong.id) ||
+            currentSong?.id === newSong.id
+          ) {
+            return sortSongs(prev);
+          }
+          return sortSongs([...prev, newSong]);
+        });
 
-      socket.onclose = () => {
-        console.log("WebSocket disconnected");
-      };
+        setCurrentSong((prev) => prev || newSong);
+      }
 
-      socket.onerror = (error) => {
-        console.error("WebSocket error:", error);
-      };
+      if (message.type === "VOTE_CHANGED") {
+        const { songId } = message.payload;
 
-      return () => {
-        if (
-          socketRef.current?.readyState === WebSocket.OPEN ||
-          socketRef.current?.readyState === WebSocket.CONNECTING
-        ) {
-          socketRef.current.close(1000, "Component unmounted");
-          socketRef.current = null;
-        }
-      };
-    }
-  }, [roomId, userId, userName, status]);
+        const fetchUpdatedVote = async () => {
+          try {
+            const res = await axios.get(`/api/room/song/${songId}`, {
+              params: { userId: userId || hostId },
+            });
+
+            const updatedSong = res.data.song;
+
+            setUpcomingSongs((prevSongs) =>
+              sortSongs(
+                prevSongs.map((song) =>
+                  song.id === songId ? updatedSong : song
+                )
+              )
+            );
+          } catch (err) {
+            console.error("Error fetching updated song vote:", err);
+          }
+        };
+
+        fetchUpdatedVote();
+      }
+    };
+
+    socket.onclose = () => {
+      console.log("WebSocket disconnected");
+    };
+
+    socket.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    return () => {
+      if (
+        socketRef.current?.readyState === WebSocket.OPEN ||
+        socketRef.current?.readyState === WebSocket.CONNECTING
+      ) {
+        socketRef.current.close(1000, "Component unmounted");
+      }
+    };
+  }, [roomId, userId, hostId, userName, status, currentSong]);
 
   useEffect(() => {
     if (userEvents.length === 0) return;
-
-    const timer = setTimeout(() => {
-      setUserEvents((prev) => prev.slice(1));
-    }, 2000);
-
+    const timer = setTimeout(
+      () => setUserEvents((prev) => prev.slice(1)),
+      2000
+    );
     return () => clearTimeout(timer);
   }, [userEvents]);
-
-
 
   const isHost = userId === room?.hostId;
 
   const handleAddToQueue = async () => {
     if (!youtubeUrl) return;
-
     try {
       const response = await axios.post("/api/room/song", {
         roomId,
@@ -217,31 +210,25 @@ export default function RoomPageContent({
         type: "youtube",
       });
 
-      if (response.status !== 200) {
-        console.log("Error while adding a song");
-      } else {
-        console.log("Song added successfully");
-
-        // Notify others via WebSocket (optional for live sync)
-        if (socketRef.current?.readyState === WebSocket.OPEN) {
-          socketRef.current.send(
-            JSON.stringify({
-              type: "SONG_ADDED",
-              payload: {
-                roomId,
-                song: response.data.song, // Send the added song data
-              },
-            })
-          );
-        }
-        // toast.success("Song added successfully");
+      if (
+        response.status === 200 &&
+        socketRef.current?.readyState === WebSocket.OPEN
+      ) {
+        socketRef.current.send(
+          JSON.stringify({
+            type: "SONG_ADDED",
+            payload: {
+              roomId,
+              song: response.data.song,
+            },
+          })
+        );
       }
     } catch (err) {
       console.error("Error while adding song", err);
     }
 
     setYoutubeUrl("");
-    fetchSongs();
   };
 
   const handleVote = async (songId: string, isVoted: boolean) => {
@@ -251,30 +238,32 @@ export default function RoomPageContent({
 
       if (isVoted) {
         await axios.delete("/api/room/song/vote", { params: payload });
-        console.log("Vote removed");
       } else {
         await axios.post("/api/room/song/vote", payload);
-        console.log("Vote created");
       }
-
-      // Optional: Notify via WebSocket
 
       if (socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.send(
           JSON.stringify({
             type: "VOTE_CHANGED",
-            payload: {
-              roomId,
-              songId,
-              isVoted: !isVoted, // Toggle the vote status
-            },
+            payload: { roomId, songId },
           })
         );
       }
 
-      fetchSongs();
+      const res = await axios.get(`/api/room/song/${songId}`, {
+        params: { userId: userId || hostId },
+      });
+
+      const updatedSong = res.data.song;
+
+      setUpcomingSongs((prevSongs) =>
+        sortSongs(
+          prevSongs.map((song) => (song.id === songId ? updatedSong : song))
+        )
+      );
     } catch (err) {
-      console.error("Error while voting", err);
+      console.error("Voting error:", err);
     }
   };
 

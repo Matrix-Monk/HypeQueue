@@ -13,6 +13,19 @@ export const createRoomSchema = z.object({
   hostId: z.string().min(1, { message: "User ID is required" }),
 });
 
-
+export type Song = {
+  id: string;
+  title: string;
+  artist: string;
+  url: string;
+  type: string;
+  extractedId: string;
+  duration: number;
+  thumbnail: string;
+  roomId: string;
+  createdAt: string;
+  voteCount: number;
+  isVoted: boolean;
+};
 
 export type CreateRoomSchema = z.infer<typeof createRoomSchema>;

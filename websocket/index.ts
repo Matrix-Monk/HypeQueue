@@ -51,7 +51,6 @@ function handleMessage(socket: WebSocket, msg: any) {
 
     console.log(`User ${userName} joined room ${roomId}`);
 
-    // ✅ FIXED HERE
     broadcastToRoom(roomId, {
       type: "USER_LIST",
       payload: getRoomUserNames(roomId),
@@ -60,6 +59,26 @@ function handleMessage(socket: WebSocket, msg: any) {
     broadcastToRoom(roomId, {
       type: "USER_EVENT",
       payload: { userName, action: "joined", timestamp: Date.now() },
+    });
+  }
+
+
+   if (type === "SONG_ADDED") {
+     const { roomId, song } = payload;
+     broadcastToRoom(roomId, {
+       type: "SONG_ADDED",
+       payload: { song },
+     });
+   }
+  
+  
+  if (type === "VOTE_CHANGED") {
+    broadcastToRoom(payload.roomId, {
+      type: "VOTE_CHANGED",
+      payload: {
+        songId: payload.songId,
+        roomId: payload.roomId,
+      },
     });
   }
 }
