@@ -5,94 +5,157 @@ interface ClientInfo {
   roomId: string;
   userId: string;
   userName: string;
+  isHost: boolean;
 }
 
-const rooms: Record<string, ClientInfo[]> = {}; // { roomId: [clients...] }
+interface Message {
+  type: string;
+  payload: any;
+}
 
+const rooms: Record<string, ClientInfo[]> = {};
 
+// Entry point: Initialize the WebSocket server
 export function setupWebSocketServer(wss: WebSocketServer) {
-  try {
-    console.log("WebSocket Server Initialized");
+  console.log("✅ WebSocket Server Initialized");
 
-    wss.on("connection", (socket, req) => {
-      console.log("New WebSocket Connection");
+  wss.on("connection", (socket) => {
+    console.log("🔌 New WebSocket connection");
 
-
-      socket.on("message", (data) => {
-        try {
-          const msg = JSON.parse(data.toString());
-          handleMessage(socket, msg);
-        } catch (error) {
-          console.error("Invalid WebSocket message", error);
-        }
-      });
-
-      socket.on("close", () => {
-        handleDisconnect(socket);
-      });
+    socket.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString()) as Message;
+        handleMessage(socket, msg);
+      } catch (error) {
+        console.error("❌ Invalid WebSocket message", error);
+      }
     });
-  } catch (error) {
-    console.error("Error setting up WebSocket server", error);
-  }
+
+    socket.on("close", () => {
+      handleDisconnect(socket);
+    });
+  });
 }
 
+// Check if a user is the host of a room
+function isHostUser(roomId: string, userId: string): boolean {
+  const clients = rooms[roomId];
+  return clients?.some((c) => c.userId === userId && c.isHost) ?? false;
+}
 
-function handleMessage(socket: WebSocket, msg: any) {
+// Handle messages from the client
+function handleMessage(socket: WebSocket, msg: Message) {
   const { type, payload } = msg;
 
-  if (type === "JOIN_ROOM") {
-    const { roomId, userId, userName } = payload;
+  switch (type) {
+    case "JOIN_ROOM": {
+      const { roomId, userId, userName, isHost } = payload;
 
-    if (!rooms[roomId]) {
-      rooms[roomId] = [];
+      rooms[roomId] = rooms[roomId] || [];
+
+      rooms[roomId].push({ socket, roomId, userId, userName, isHost });
+
+      console.log(`👤 ${userName} joined room ${roomId}`);
+
+      broadcastToRoom(roomId, {
+        type: "USER_LIST",
+        payload: getRoomUserNames(roomId),
+      });
+
+      broadcastToRoom(roomId, {
+        type: "USER_EVENT",
+        payload: { userName, action: "joined", timestamp: Date.now() },
+      });
+
+      break;
     }
 
-    rooms[roomId].push({ socket, roomId, userId, userName });
+    case "SONG_ADDED": {
+      const { roomId, song } = payload;
 
-    console.log(`User ${userName} joined room ${roomId}`);
+      broadcastToRoom(roomId, {
+        type: "SONG_ADDED",
+        payload: { song },
+      });
 
-    broadcastToRoom(roomId, {
-      type: "USER_LIST",
-      payload: getRoomUserNames(roomId),
-    });
+      break;
+    }
 
-    broadcastToRoom(roomId, {
-      type: "USER_EVENT",
-      payload: { userName, action: "joined", timestamp: Date.now() },
-    });
-  }
+    case "VOTE_CHANGED": {
+      const { roomId, songId, isVoted} = payload;
 
+      broadcastToRoom(roomId, {
+        type: "VOTE_CHANGED",
+        payload: { roomId, songId, isVoted },
+      });
 
-   if (type === "SONG_ADDED") {
-     const { roomId, song } = payload;
-     broadcastToRoom(roomId, {
-       type: "SONG_ADDED",
-       payload: { song },
-     });
-   }
-  
-  
-  if (type === "VOTE_CHANGED") {
-    broadcastToRoom(payload.roomId, {
-      type: "VOTE_CHANGED",
-      payload: {
-        songId: payload.songId,
-        roomId: payload.roomId,
-      },
-    });
+      break;
+    }
+
+    case "PLAYER_EVENT": {
+      const { roomId, userId, action, currentTime, videoId } = payload;
+
+      if (!isHostUser(roomId, userId)) {
+        console.warn(`🚫 Unauthorized PLAYER_EVENT from ${userId} (not host)`);
+        return;
+      }
+
+      broadcastToRoom(roomId, {
+        type: "PLAYER_EVENT",
+        payload: { userId, action, currentTime, videoId },
+      });
+
+      break;
+    }
+
+    case "REQUEST_PLAYER_STATE": {
+      const { roomId, requesterId } = payload;
+
+      const hostClient = rooms[roomId]?.find((c) => c.isHost);
+      if (hostClient) {
+        hostClient.socket.send(
+          JSON.stringify({
+            type: "SEND_PLAYER_STATE",
+            payload: { toUserId: requesterId },
+          })
+        );
+      }
+
+      break;
+    }
+
+    case "PLAYER_STATE_RESPONSE": {
+      const { roomId, toUserId, action, currentTime, videoId } = payload;
+
+      const targetClient = rooms[roomId]?.find((c) => c.userId === toUserId);
+      if (targetClient) {
+        targetClient.socket.send(
+          JSON.stringify({
+            type: "PLAYER_STATE_RESPONSE",
+            payload: { toUserId, action, currentTime, videoId },
+          })
+        );
+      }
+
+      break;
+    }
+
+    default:
+      console.warn(`⚠️ Unknown message type: ${type}`);
   }
 }
 
+// Handle user disconnection
 function handleDisconnect(socket: WebSocket) {
   for (const roomId in rooms) {
     const clients = rooms[roomId];
     const index = clients.findIndex((c) => c.socket === socket);
 
     if (index !== -1) {
-      const { userId, userName } = clients[index];
+      const { userName } = clients[index];
       clients.splice(index, 1);
 
-      console.log(`User ${userName} disconnected from room ${roomId}`);
+      console.log(`❌ ${userName} disconnected from room ${roomId}`);
 
       broadcastToRoom(roomId, {
         type: "USER_LIST",
@@ -112,27 +175,22 @@ function handleDisconnect(socket: WebSocket) {
     }
   }
 }
-function broadcastToRoom(roomId: string, message: any) {
+
+// Broadcast a message to every client in the room
+function broadcastToRoom(roomId: string, message: Message) {
   const clients = rooms[roomId];
   if (!clients) return;
 
   const data = JSON.stringify(message);
 
-  clients.forEach((client) => {
-    if (client.socket.readyState === client.socket.OPEN) {
+  for (const client of clients) {
+    if (client.socket.readyState === WebSocket.OPEN) {
       client.socket.send(data);
     }
-  });
+  }
 }
 
+// Get user names of the room
 function getRoomUserNames(roomId: string): string[] {
-  const clients = rooms[roomId];
-  if (!clients) return [];
-  return clients.map((c) => c.userName); 
+  return rooms[roomId]?.map((c) => c.userName) ?? [];
 }
-
-
-
-
-
-

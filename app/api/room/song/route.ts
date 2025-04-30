@@ -20,63 +20,6 @@ const getSongSchema = z.object({
   guestId: z.string().optional(),
 });
 
-// export async function POST(req: NextRequest) {
-//   try {
-//     const { roomId, url, type } = songSchema.parse(await req.json());
-//     console.log(roomId + " " + url);
-
-//     const isYTLink = url.match(YT_REGEX);
-
-//     if (!isYTLink) {
-//       return NextResponse.json({ error: "Wrong url format" }, { status: 411 });
-//     }
-
-//     const extractedId = url.split("?v=")?.[1];
-
-//     const metadata = await getYoutubeMetadata(extractedId);
-
-//     if (!metadata) {
-//       return NextResponse.json(
-//         { error: "Failed to fetch metadata" },
-//         { status: 500 }
-//       );
-//     }
-//     const { title, artist, thumbnail, duration } = metadata;
-
-//     const res = await prisma.song.create({
-//       data: {
-//         roomId,
-//         url,
-//         extractedId,
-//         type,
-//         title,
-//         artist,
-//         thumbnail,
-//         duration: duration?.toString() ?? null,
-//       },
-//     });
-
-//     return NextResponse.json(
-//       {
-//         message: "Song added to the queue",
-//         songId: res.id,
-//         title: res.title,
-//         artist: res.artist,
-//         thumbnail: res.thumbnail,
-//         duration: res.duration,
-//       },
-//       { status: 200 }
-//     );
-//   } catch (error) {
-//     return NextResponse.json(
-//       {
-//         error,
-//         message: "Failed to add song to the queue",
-//       },
-//       { status: 500 }
-//     );
-//   }
-// }
 
 export async function POST(req: NextRequest) {
   try {

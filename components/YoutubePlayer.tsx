@@ -1,87 +1,196 @@
-"use client";
+import React, { useEffect, useRef } from "react";
+import YouTube from "react-youtube";
+import type { YouTubeEvent } from "react-youtube";
 
-import { useEffect, useState } from "react";
 
-type YouTubePlayerProps = {
-  url: string;
+interface Props {
+  videoId: string;
   isHost: boolean;
-};
+  socket: WebSocket;
+  roomId: string;
+  userId: string;
+}
 
-const YouTubePlayer = ({ url, isHost }: YouTubePlayerProps) => {
-  const [player, setPlayer] = useState<any>(null);
-  const [apiLoaded, setApiLoaded] = useState(false);
+export default function YouTubePlayer({
 
-  // Load YouTube Iframe API once
-  useEffect(() => {
-    if (typeof window !== "undefined" && !window.YT) {
-      const script = document.createElement("script");
-      script.src = "https://www.youtube.com/iframe_api";
-      script.async = true;
-      document.body.appendChild(script);
+  videoId: videoIdProp,
+  isHost,
+  socket,
+  roomId,
+  userId,
+}: Props) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const playerRef = useRef<any>(null);
 
-      script.onload = () => {
-        console.log("YouTube API loaded.");
-        setApiLoaded(true);
-      };
-    } else {
-      setApiLoaded(true);
-    }
-  }, []);
+  const videoId = videoIdProp || "";
 
   useEffect(() => {
-    if (!apiLoaded || !url) return;
+    if (!isHost) return;
 
-    const videoId = new URL(url).searchParams.get("v");
-    if (!videoId) {
-      console.error("Invalid YouTube URL.");
-      return;
-    }
+    let interval: NodeJS.Timeout | null = null;
 
-    const interval = setInterval(() => {
-      if (window.YT && window.YT.Player) {
-        clearInterval(interval);
+    const maintainPlayback = () => {
+      const player = playerRef.current;
+      if (!player) return;
 
-        const ytPlayer = new window.YT.Player("youtube-player", {
-          height: "390",
-          width: "640",
-          videoId,
-          playerVars: {
-            controls: isHost ? 1 : 0, // ONLY host gets controls
-            disablekb: isHost ? 0 : 1, // Host can use keyboard shortcuts
-            modestbranding: 1,
-            rel: 0,
-            showinfo: 0,
-          },
-          events: {
-            onReady: (event: any) => {
-              console.log("Player ready.");
-              setPlayer(event.target);
-            },
-          },
-        });
+      if (document.visibilityState === "hidden") {
+        // Try to keep video playing in background
+        if (player.getPlayerState() === window.YT.PlayerState.PAUSED) {
+          player.playVideo();
+        }
+
+        interval = setInterval(() => {
+          if (player.getPlayerState() === window.YT.PlayerState.PAUSED) {
+            player.playVideo();
+          }
+        }, 2000); // Retry every 2 seconds
+      } else {
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
       }
-    }, 100);
+    };
 
-    return () => clearInterval(interval);
-  }, [apiLoaded, url, isHost]);
+    document.addEventListener("visibilitychange", maintainPlayback);
+
+    return () => {
+      document.removeEventListener("visibilitychange", maintainPlayback);
+      if (interval) clearInterval(interval);
+    };
+  }, [isHost]);
+
+  const handlePlayerStateChange = (event: YouTubeEvent) => {
+    const player = event.target;
+    const state = player.getPlayerState();
+
+    if (!isHost) return;
+
+    if (
+      state === window.YT.PlayerState.PLAYING ||
+      state === window.YT.PlayerState.PAUSED
+    ) {
+      socket?.send(
+        JSON.stringify({
+          type: "PLAYER_EVENT",
+          payload: {
+            roomId,
+            userId,
+            action: state === window.YT.PlayerState.PLAYING ? "play" : "pause",
+            currentTime: player.getCurrentTime(),
+            videoId,
+          },
+        })
+      );
+    }
+  };
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMessage = (event: MessageEvent) => {
+      const message = JSON.parse(event.data);
+      const player = playerRef.current;
+      if (!player) return;
+
+      if (message.type === "PLAYER_EVENT" && !isHost) {
+        const { action, currentTime, videoId: vid } = message.payload;
+        if (vid !== videoId) return;
+
+        const drift = Math.abs(player.getCurrentTime() - currentTime);
+        if (drift > 0.5) player.seekTo(currentTime, true);
+
+        if (
+          action === "play" &&
+          player.getPlayerState() !== window.YT.PlayerState.PLAYING
+        ) {
+          player.playVideo();
+        } else if (action === "pause") {
+          player.pauseVideo();
+        }
+      }
+
+      if (isHost && message.type === "SEND_PLAYER_STATE") {
+        const { toUserId } = message.payload;
+        socket.send(
+          JSON.stringify({
+            type: "PLAYER_STATE_RESPONSE",
+            payload: {
+              roomId,
+              toUserId,
+              userId,
+              action:
+                player.getPlayerState() === window.YT.PlayerState.PLAYING
+                  ? "play"
+                  : "pause",
+              currentTime: player.getCurrentTime(),
+              videoId,
+            },
+          })
+        );
+      }
+
+      if (!isHost && message.type === "PLAYER_STATE_RESPONSE") {
+        const { action, currentTime, videoId: vid, toUserId } = message.payload;
+        if (toUserId !== userId || vid !== videoId) return;
+
+        player.seekTo(currentTime, true);
+        if (action === "play") player.playVideo();
+        else player.pauseVideo();
+      }
+    };
+
+    socket.addEventListener("message", handleMessage);
+    return () => socket.removeEventListener("message", handleMessage);
+  }, [isHost, socket, videoId, roomId, userId]);
+
+  const onReady = (event: YouTubeEvent) => {
+    playerRef.current = event.target;
+
+    if (!isHost) {
+      socket.send(
+        JSON.stringify({
+          type: "REQUEST_PLAYER_STATE",
+          payload: {
+            roomId,
+            requesterId: userId,
+          },
+        })
+      );
+    }
+  };
 
   return (
-    <div className="relative w-full h-0 pb-[56.25%]">
-      <div
-        id="youtube-player"
-        className="absolute top-0 left-0 w-full h-full"
+    <div style={{ position: "relative", width: "100%", maxWidth: 800 }}>
+      <YouTube
+        videoId={videoId}
+        onReady={onReady}
+        onStateChange={handlePlayerStateChange}
+        opts={{
+          playerVars: {
+            autoplay: 0,
+            controls: isHost ? 1 : 0,
+            disablekb: 1,
+            modestbranding: 1,
+          },
+        }}
       />
 
-      {/* Overlay to block interaction for non-host */}
+      {/* 🚫 Overlay that blocks interaction for non-hosts */}
       {!isHost && (
         <div
-          className="absolute top-0 left-0 w-full h-full z-10"
-          style={{ background: "transparent", pointerEvents: "auto" }}
-        ></div>
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 10,
+            backgroundColor: "transparent", // optional: "rgba(0,0,0,0.1)" to indicate disabled
+            cursor: "not-allowed",
+          }}
+        />
       )}
     </div>
   );
-};
-
-export default YouTubePlayer;
-
+}

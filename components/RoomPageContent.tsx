@@ -59,6 +59,7 @@ export default function RoomPageContent({
     });
   };
 
+
   const fetchSongs = useCallback(async () => {
     try {
       const res = await axios.get(`/api/room/song`, {
@@ -97,6 +98,8 @@ export default function RoomPageContent({
     if (roomId) fetchSongs();
   }, [roomId, name, hostId, fetchSongs]);
 
+  const isHost = userId === room?.hostId;
+
   useEffect(() => {
     if (status !== "authenticated" || !roomId || !userId) return;
 
@@ -110,7 +113,7 @@ export default function RoomPageContent({
       socket.send(
         JSON.stringify({
           type: "JOIN_ROOM",
-          payload: { roomId, userId, userName },
+          payload: { roomId, userId, userName, isHost },
         })
       );
     };
@@ -151,7 +154,7 @@ export default function RoomPageContent({
         const fetchUpdatedVote = async () => {
           try {
             const res = await axios.get(`/api/room/song/${songId}`, {
-              params: { userId: userId || hostId },
+              params: userId ? { userId } : { hostId }
             });
 
             const updatedSong = res.data.song;
@@ -170,6 +173,24 @@ export default function RoomPageContent({
 
         fetchUpdatedVote();
       }
+
+
+      // if (message.type === "VOTE_CHANGED") {
+      //   const { songId, isVoted } = message.payload;
+
+      //   setUpcomingSongs((prevSongs) =>
+      //     sortSongs(
+      //       prevSongs.map((song) =>
+      //         song.id === songId
+      //           ? {
+      //               ...song,
+      //               voteCount: song.voteCount + (isVoted ? 1 : -1),
+      //             }
+      //           : song
+      //       )
+      //     )
+      //   );
+      // }
     };
 
     socket.onclose = () => {
@@ -188,7 +209,7 @@ export default function RoomPageContent({
         socketRef.current.close(1000, "Component unmounted");
       }
     };
-  }, [roomId, userId, hostId, userName, status, currentSong]);
+  }, [roomId, userId, hostId, isHost, userName, status, currentSong]);
 
   useEffect(() => {
     if (userEvents.length === 0) return;
@@ -199,7 +220,7 @@ export default function RoomPageContent({
     return () => clearTimeout(timer);
   }, [userEvents]);
 
-  const isHost = userId === room?.hostId;
+  
 
   const handleAddToQueue = async () => {
     if (!youtubeUrl) return;
@@ -233,8 +254,7 @@ export default function RoomPageContent({
 
   const handleVote = async (songId: string, isVoted: boolean) => {
     try {
-      const payload =
-        userId === hostId ? { hostId, songId } : { userId, songId };
+      const payload = userId ? { userId, songId } : { hostId, songId };
 
       if (isVoted) {
         await axios.delete("/api/room/song/vote", { params: payload });
@@ -246,7 +266,7 @@ export default function RoomPageContent({
         socketRef.current.send(
           JSON.stringify({
             type: "VOTE_CHANGED",
-            payload: { roomId, songId },
+            payload: { roomId, songId, isVoted: !isVoted }, // !isVoted because we just changed it
           })
         );
       }
@@ -264,6 +284,11 @@ export default function RoomPageContent({
       );
     } catch (err) {
       console.error("Voting error:", err);
+      if (axios.isAxiosError(err) && err.response?.status === 409) {
+        toast.error("You’ve already voted.");
+      } else {
+        toast.error("Vote failed. Please try again.");
+      }
     }
   };
 
@@ -339,7 +364,13 @@ export default function RoomPageContent({
           <div className="w-full md:w-1/3 space-y-6 order-1 md:order-2">
             {/* Current Song */}
             <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/10 p-4 flex flex-col gap-4">
-              <YouTubePlayer url={currentSong?.url || ""} isHost />
+              <YouTubePlayer
+                isHost={isHost}
+                socket={socketRef.current as WebSocket}
+                roomId={roomId}
+                userId={userId || ""}
+                videoId={currentSong?.extractedId || ""}
+              />
               <div className="flex items-center gap-4">
                 <div className="space-y-1">
                   <h2 className="text-xl font-semibold text-white">

@@ -3,11 +3,12 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { songId: string } }
+  context: { params: Promise<{ songId: string }> }
 ) {
   try {
+    const { songId } = await context.params;
     const url = new URL(req.url);
-    const songId = params.songId;
+
     const userId = url.searchParams.get("userId") || undefined;
     const hostId = url.searchParams.get("hostId") || undefined;
     const guestId = url.searchParams.get("guestId") || undefined;
