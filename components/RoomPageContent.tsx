@@ -59,7 +59,6 @@ export default function RoomPageContent({
     });
   };
 
-
   const fetchSongs = useCallback(async () => {
     try {
       const res = await axios.get(`/api/room/song`, {
@@ -75,7 +74,11 @@ export default function RoomPageContent({
       }
 
       const data = res.data as GetSongResponse;
+
+
       const songs = data.songs;
+
+      console.log("Fetched songs:", songs);
 
       if (!songs || songs.length === 0) {
         setCurrentSong(null);
@@ -101,7 +104,10 @@ export default function RoomPageContent({
   const isHost = userId === room?.hostId;
 
   useEffect(() => {
-    if (status !== "authenticated" || !roomId || !userId) return;
+    if (status !== "authenticated") return;
+    if (!roomId || !userId) return;
+
+    if (socketRef.current) return;
 
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
     const socket = new WebSocket(
@@ -109,13 +115,21 @@ export default function RoomPageContent({
     );
     socketRef.current = socket;
 
+    console.log("Connecting to WebSocket...");
+
     socket.onopen = () => {
-      socket.send(
-        JSON.stringify({
-          type: "JOIN_ROOM",
-          payload: { roomId, userId, userName, isHost },
-        })
-      );
+      console.log("✅ WebSocket opened");
+
+      const payload = {
+        type: "JOIN_ROOM",
+        payload: { roomId, userId, userName, isHost },
+      };
+
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify(payload));
+      } else {
+        console.warn("Socket not ready to send message yet");
+      }
     };
 
     socket.onmessage = (event) => {
@@ -154,7 +168,7 @@ export default function RoomPageContent({
         const fetchUpdatedVote = async () => {
           try {
             const res = await axios.get(`/api/room/song/${songId}`, {
-              params: userId ? { userId } : { hostId }
+              params: isHost ? { hostId } : { userId },
             });
 
             const updatedSong = res.data.song;
@@ -173,32 +187,14 @@ export default function RoomPageContent({
 
         fetchUpdatedVote();
       }
-
-
-      // if (message.type === "VOTE_CHANGED") {
-      //   const { songId, isVoted } = message.payload;
-
-      //   setUpcomingSongs((prevSongs) =>
-      //     sortSongs(
-      //       prevSongs.map((song) =>
-      //         song.id === songId
-      //           ? {
-      //               ...song,
-      //               voteCount: song.voteCount + (isVoted ? 1 : -1),
-      //             }
-      //           : song
-      //       )
-      //     )
-      //   );
-      // }
     };
 
-    socket.onclose = () => {
-      console.log("WebSocket disconnected");
+    socket.onerror = (event) => {
+      console.error("WebSocket error:", event);
     };
 
-    socket.onerror = (error) => {
-      console.error("WebSocket error:", error);
+    socket.onclose = (event) => {
+      console.warn("🔌 WebSocket closed:", event);
     };
 
     return () => {
@@ -208,6 +204,9 @@ export default function RoomPageContent({
       ) {
         socketRef.current.close(1000, "Component unmounted");
       }
+
+      socketRef.current = null;
+      console.log("WebSocket closed");
     };
   }, [roomId, userId, hostId, isHost, userName, status, currentSong]);
 
@@ -219,8 +218,6 @@ export default function RoomPageContent({
     );
     return () => clearTimeout(timer);
   }, [userEvents]);
-
-  
 
   const handleAddToQueue = async () => {
     if (!youtubeUrl) return;
@@ -254,13 +251,15 @@ export default function RoomPageContent({
 
   const handleVote = async (songId: string, isVoted: boolean) => {
     try {
-      const payload = userId ? { userId, songId } : { hostId, songId };
+      const payload = isHost ? { hostId, songId } : { userId, songId };
 
       if (isVoted) {
         await axios.delete("/api/room/song/vote", { params: payload });
       } else {
         await axios.post("/api/room/song/vote", payload);
       }
+
+      console.log("Vote sent:", { roomId, songId, isVoted });
 
       if (socketRef.current?.readyState === WebSocket.OPEN) {
         socketRef.current.send(
@@ -276,6 +275,8 @@ export default function RoomPageContent({
       });
 
       const updatedSong = res.data.song;
+
+      console.log("Updated song:", updatedSong);
 
       setUpcomingSongs((prevSongs) =>
         sortSongs(

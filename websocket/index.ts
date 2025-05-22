@@ -24,6 +24,8 @@ export function setupWebSocketServer(wss: WebSocketServer) {
 
     socket.on("message", (data) => {
       try {
+        console.log("📨 Received message from client:", data.toString());
+
         const msg = JSON.parse(data.toString()) as Message;
         handleMessage(socket, msg);
       } catch (error) {
@@ -45,6 +47,7 @@ function isHostUser(roomId: string, userId: string): boolean {
 
 // Handle messages from the client
 function handleMessage(socket: WebSocket, msg: Message) {
+ try {
   const { type, payload } = msg;
 
   switch (type) {
@@ -56,6 +59,7 @@ function handleMessage(socket: WebSocket, msg: Message) {
       rooms[roomId].push({ socket, roomId, userId, userName, isHost });
 
       console.log(`👤 ${userName} joined room ${roomId}`);
+      console.log(`📋 Current users:`, getRoomUserNames(roomId));
 
       broadcastToRoom(roomId, {
         type: "USER_LIST",
@@ -82,7 +86,7 @@ function handleMessage(socket: WebSocket, msg: Message) {
     }
 
     case "VOTE_CHANGED": {
-      const { roomId, songId, isVoted} = payload;
+      const { roomId, songId, isVoted } = payload;
 
       broadcastToRoom(roomId, {
         type: "VOTE_CHANGED",
@@ -143,6 +147,10 @@ function handleMessage(socket: WebSocket, msg: Message) {
     default:
       console.warn(`⚠️ Unknown message type: ${type}`);
   }
+ } catch (err) {
+  console.error("❌ handleMessage error:", err);
+  socket.close();
+ }
 }
 
 // Handle user disconnection
