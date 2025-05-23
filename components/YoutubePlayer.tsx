@@ -24,6 +24,8 @@ export default function YouTubePlayer({
 
   const videoId = videoIdProp || "";
 
+  console.log("🚀 YouTubePlayer mounted with videoId:", videoId);
+
   useEffect(() => {
     if (!isHost) return;
 
@@ -83,6 +85,25 @@ export default function YouTubePlayer({
         })
       );
     }
+
+
+
+    if (state === window.YT.PlayerState.ENDED) {
+      socket?.send(
+        JSON.stringify({
+          type: "PLAYER_EVENT",
+          payload: {
+            roomId,
+            userId,
+            action: "ended",
+            currentTime: 0,
+            videoId,
+          },
+        })
+      );
+    }
+
+
   };
 
   useEffect(() => {
@@ -145,7 +166,8 @@ export default function YouTubePlayer({
   }, [isHost, socket, videoId, roomId, userId]);
 
   const onReady = (event: YouTubeEvent) => {
-    playerRef.current = event.target;
+    const player = event.target;
+    playerRef.current = player;
 
     if (!isHost) {
       socket.send(
@@ -160,6 +182,16 @@ export default function YouTubePlayer({
     }
   };
 
+  useEffect(() => {
+    const player = playerRef.current;
+    if (player && videoId) {
+      player.loadVideoById(videoId);
+      if (isHost) {
+        player.playVideo();
+      }
+    }
+  }, [videoId, isHost]);
+
   return (
     <div style={{ position: "relative", width: "100%", maxWidth: 800 }}>
       <YouTube
@@ -168,7 +200,7 @@ export default function YouTubePlayer({
         onStateChange={handlePlayerStateChange}
         opts={{
           playerVars: {
-            autoplay: 0,
+            autoplay: isHost ? 1 : 0,
             controls: isHost ? 1 : 0,
             disablekb: 1,
             modestbranding: 1,

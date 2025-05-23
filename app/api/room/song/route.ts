@@ -20,7 +20,6 @@ const getSongSchema = z.object({
   guestId: z.string().optional(),
 });
 
-
 export async function POST(req: NextRequest) {
   try {
     const { roomId, url, type } = songSchema.parse(await req.json());
@@ -181,6 +180,34 @@ export async function GET(req: NextRequest) {
         error,
         message: "Failed to fetch songs",
       },
+      { status: 500 }
+    );
+  }
+}
+
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const roomId = searchParams.get("roomId");
+    const songId = searchParams.get("songId");
+
+    console.log("Deleting song with id: " + songId);
+
+    const deletedSong = await prisma.song.delete({
+      where: {
+        id: songId!,
+        roomId: roomId!,
+      },
+    });
+
+    return NextResponse.json(
+      { message: "Song deleted", deletedSong },
+      { status: 200 }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { error, message: "Failed to delete song" },
       { status: 500 }
     );
   }

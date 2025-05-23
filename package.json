@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "pnpm build && node dist/server.js",
+    "dev": "node dist/server.js",
     "build": "tsc --project tsconfig.build.json && prisma generate && prisma migrate deploy && next build",
     "start": "NODE_ENV=production node dist/server.js",
     "postinstall": "echo Skipping Prisma generate, handled in build",

@@ -104,6 +104,16 @@ function handleMessage(socket: WebSocket, msg: Message) {
         return;
       }
 
+      if (action === "ended") {
+
+        console.log(`🎵 Song ended for room ${roomId}`);
+        
+        broadcastToRoom(roomId, {
+          type: "SONG_ENDED",
+          payload: { videoId, roomId},
+        })
+      }
+
       broadcastToRoom(roomId, {
         type: "PLAYER_EVENT",
         payload: { userId, action, currentTime, videoId },

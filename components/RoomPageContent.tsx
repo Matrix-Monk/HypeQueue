@@ -75,7 +75,6 @@ export default function RoomPageContent({
 
       const data = res.data as GetSongResponse;
 
-
       const songs = data.songs;
 
       console.log("Fetched songs:", songs);
@@ -162,6 +161,15 @@ export default function RoomPageContent({
         setCurrentSong((prev) => prev || newSong);
       }
 
+      if (message.type === "SONG_ENDED") {
+        const videoId = message.payload.videoId as string;
+
+        if (videoId !== currentSong?.extractedId) return;
+
+        handlePlayNextSong(currentSong.id);
+        
+      }
+
       if (message.type === "VOTE_CHANGED") {
         const { songId } = message.payload;
 
@@ -209,6 +217,45 @@ export default function RoomPageContent({
       console.log("WebSocket closed");
     };
   }, [roomId, userId, hostId, isHost, userName, status, currentSong]);
+
+  const handlePlayNextSong = async (songId: string) => {
+    try {
+      const response = await axios.delete("/api/room/song", {
+        params: {
+          roomId,
+          songId,
+        },
+      });
+      if (response.status === 200) {
+        setCurrentSong(null);
+
+        toast.success("Playing next song...");
+
+        console.log("Current upcomingSongs", upcomingSongs);
+
+        const nextSong = upcomingSongs.shift();
+
+        if (!nextSong) return;
+
+        setCurrentSong(nextSong || null);
+
+        console.log("Next song:", currentSong);
+      } else {
+        toast.error("Failed to play next song");
+      }
+    } catch (err) {
+      console.error("Failed to play next song:", err);
+      toast.error("Failed to play next song");
+    }
+    // if (socketRef.current?.readyState === WebSocket.OPEN) {
+    //   socketRef.current.send(
+    //     JSON.stringify({
+    //       type: "SONG_DELETED",
+    //       payload: { roomId, songId },
+    //     })
+    //   );
+    // }
+  };
 
   useEffect(() => {
     if (userEvents.length === 0) return;
