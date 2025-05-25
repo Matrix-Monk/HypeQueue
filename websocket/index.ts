@@ -56,6 +56,13 @@ function handleMessage(socket: WebSocket, msg: Message) {
 
       rooms[roomId] = rooms[roomId] || [];
 
+      const existing = rooms[roomId].find((c) => c.userId === userId);
+
+      if (existing) {
+        console.warn(`⚠️ User ${userName} already in room ${roomId}`);
+        return;
+      }
+
       rooms[roomId].push({ socket, roomId, userId, userName, isHost });
 
       console.log(`👤 ${userName} joined room ${roomId}`);
@@ -96,6 +103,17 @@ function handleMessage(socket: WebSocket, msg: Message) {
       break;
     }
 
+    case "SONG_CHANGED": {
+      const { roomId, songId, videoId, nextSong, rest } = payload;
+
+      broadcastToRoom(roomId, {
+        type: "SONG_CHANGED",
+        payload: { roomId, songId, videoId, rest , nextSong },
+      });
+
+      break;
+    }
+
     case "PLAYER_EVENT": {
       const { roomId, userId, action, currentTime, videoId } = payload;
 
@@ -105,13 +123,12 @@ function handleMessage(socket: WebSocket, msg: Message) {
       }
 
       if (action === "ended") {
-
         console.log(`🎵 Song ended for room ${roomId}`);
-        
+
         broadcastToRoom(roomId, {
           type: "SONG_ENDED",
-          payload: { videoId, roomId},
-        })
+          payload: { userId, videoId, roomId },
+        });
       }
 
       broadcastToRoom(roomId, {
@@ -126,7 +143,7 @@ function handleMessage(socket: WebSocket, msg: Message) {
       const { roomId, requesterId } = payload;
 
       const hostClient = rooms[roomId]?.find((c) => c.isHost);
-      if (hostClient) {
+      if (hostClient && hostClient.socket.readyState === WebSocket.OPEN) {
         hostClient.socket.send(
           JSON.stringify({
             type: "SEND_PLAYER_STATE",
@@ -142,7 +159,7 @@ function handleMessage(socket: WebSocket, msg: Message) {
       const { roomId, toUserId, action, currentTime, videoId } = payload;
 
       const targetClient = rooms[roomId]?.find((c) => c.userId === toUserId);
-      if (targetClient) {
+      if (targetClient && targetClient.socket.readyState === WebSocket.OPEN) {
         targetClient.socket.send(
           JSON.stringify({
             type: "PLAYER_STATE_RESPONSE",

@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { useSession } from "next-auth/react";
@@ -10,6 +10,7 @@ import axios from "axios";
 import { toast } from "sonner";
 import RoomNavbar from "./RoomNavbar";
 import { Song } from "@/lib/validation";
+import { useRoomWebSocket } from "@/hooks/useRoomWebSocket";
 
 type Room = {
   id: string;
@@ -48,16 +49,22 @@ export default function RoomPageContent({
   const [usersInRoom, setUsersInRoom] = useState<string[]>([]);
   const [userEvents, setUserEvents] = useState<UserEvent[]>([]);
   const [showUserList, setShowUserList] = useState(false);
-  const socketRef = useRef<WebSocket | null>(null);
 
-  const sortSongs = (songs: Song[]) => {
-    return [...songs].sort((a, b) => {
-      if (b.voteCount !== a.voteCount) {
-        return b.voteCount - a.voteCount;
-      }
-      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-    });
-  };
+  const isHost = userId === room?.hostId;
+
+  const { socket, isConnected } = useRoomWebSocket({
+    status,
+    roomId,
+    userId,
+    userName: userName ?? undefined,
+    isHost,
+  });
+
+  const now = new Date();
+
+  console.log("WebSocket connected:", isConnected);
+  console.log("WebSocket instance:", socket);
+  console.log(`${now.toLocaleTimeString()}.${now.getMilliseconds()}`);
 
   const fetchSongs = useCallback(async () => {
     try {
@@ -74,10 +81,7 @@ export default function RoomPageContent({
       }
 
       const data = res.data as GetSongResponse;
-
       const songs = data.songs;
-
-      console.log("Fetched songs:", songs);
 
       if (!songs || songs.length === 0) {
         setCurrentSong(null);
@@ -85,138 +89,51 @@ export default function RoomPageContent({
         return;
       }
 
-      const newCurrent = songs[0];
-      const rest = songs.slice(1);
-      setCurrentSong(newCurrent);
-      setUpcomingSongs(sortSongs(rest));
+      setCurrentSong(songs[0]);
+
+      const filtered = songs.slice(1);
+      setUpcomingSongs(sortSongs(filtered));
     } catch (err) {
       console.error("Error fetching songs", err);
       toast.error("Error fetching songs");
     }
   }, [roomId, userId, hostId]);
 
+  const fetchUpcomingSongsOnly = useCallback(async () => {
+    try {
+      const res = await axios.get(`/api/room/song`, {
+        params: {
+          roomId,
+          ...(userId === hostId ? { hostId } : { userId }),
+        },
+      });
+
+      if (res.status !== 200) {
+        toast.error(res.data.message);
+        return;
+      }
+
+      const data = res.data as GetSongResponse;
+      const songs = data.songs;
+
+      if (!songs || songs.length === 0) {
+        setUpcomingSongs([]);
+        return;
+      }
+
+      // Filter out the current song to avoid touching it
+      const filtered = songs.filter((s) => s.id !== currentSong?.id);
+      setUpcomingSongs(sortSongs(filtered));
+    } catch (err) {
+      console.error("Error fetching upcoming songs", err);
+      toast.error("Error updating queue");
+    }
+  }, [roomId, userId, hostId, currentSong]);
+
   useEffect(() => {
     setRoom({ id: roomId, name, hostId });
     if (roomId) fetchSongs();
   }, [roomId, name, hostId, fetchSongs]);
-
-  const isHost = userId === room?.hostId;
-
-  useEffect(() => {
-    if (status !== "authenticated") return;
-    if (!roomId || !userId) return;
-
-    if (socketRef.current) return;
-
-    const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(
-      `${protocol}://${window.location.host}/ws/room`
-    );
-    socketRef.current = socket;
-
-    console.log("Connecting to WebSocket...");
-
-    socket.onopen = () => {
-      console.log("✅ WebSocket opened");
-
-      const payload = {
-        type: "JOIN_ROOM",
-        payload: { roomId, userId, userName, isHost },
-      };
-
-      if (socket.readyState === WebSocket.OPEN) {
-        socket.send(JSON.stringify(payload));
-      } else {
-        console.warn("Socket not ready to send message yet");
-      }
-    };
-
-    socket.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-
-      if (message.type === "USER_LIST") {
-        setUsersInRoom(message.payload);
-      }
-
-      if (message.type === "USER_EVENT") {
-        const { userName, action, timestamp } = message.payload;
-        setUserEvents((prev) => [
-          { userName, action, timestamp },
-          ...prev.slice(0, 9),
-        ]);
-      }
-
-      if (message.type === "SONG_ADDED") {
-        const newSong = message.payload.song as Song;
-        setUpcomingSongs((prev) => {
-          if (
-            prev.some((s) => s.id === newSong.id) ||
-            currentSong?.id === newSong.id
-          ) {
-            return sortSongs(prev);
-          }
-          return sortSongs([...prev, newSong]);
-        });
-
-        setCurrentSong((prev) => prev || newSong);
-      }
-
-      if (message.type === "SONG_ENDED") {
-        const videoId = message.payload.videoId as string;
-
-        if (videoId !== currentSong?.extractedId) return;
-
-        handlePlayNextSong(currentSong.id);
-        
-      }
-
-      if (message.type === "VOTE_CHANGED") {
-        const { songId } = message.payload;
-
-        const fetchUpdatedVote = async () => {
-          try {
-            const res = await axios.get(`/api/room/song/${songId}`, {
-              params: isHost ? { hostId } : { userId },
-            });
-
-            const updatedSong = res.data.song;
-
-            setUpcomingSongs((prevSongs) =>
-              sortSongs(
-                prevSongs.map((song) =>
-                  song.id === songId ? updatedSong : song
-                )
-              )
-            );
-          } catch (err) {
-            console.error("Error fetching updated song vote:", err);
-          }
-        };
-
-        fetchUpdatedVote();
-      }
-    };
-
-    socket.onerror = (event) => {
-      console.error("WebSocket error:", event);
-    };
-
-    socket.onclose = (event) => {
-      console.warn("🔌 WebSocket closed:", event);
-    };
-
-    return () => {
-      if (
-        socketRef.current?.readyState === WebSocket.OPEN ||
-        socketRef.current?.readyState === WebSocket.CONNECTING
-      ) {
-        socketRef.current.close(1000, "Component unmounted");
-      }
-
-      socketRef.current = null;
-      console.log("WebSocket closed");
-    };
-  }, [roomId, userId, hostId, isHost, userName, status, currentSong]);
 
   const handlePlayNextSong = async (songId: string) => {
     try {
@@ -226,20 +143,40 @@ export default function RoomPageContent({
           songId,
         },
       });
+
       if (response.status === 200) {
-        setCurrentSong(null);
+        const [nextSong, ...rest] = upcomingSongs;
 
+        setUpcomingSongs(rest);
+        setCurrentSong(nextSong || null); // Triggers useEffect if needed
+
+        if (upcomingSongs.length === 0) {
+          toast.info("No more songs in the queue.");
+          return;
+        }
+
+        console.log("Next song to play:", nextSong.title);
+
+        if (socket?.readyState === WebSocket.OPEN && nextSong) {
+          socket.send(
+            JSON.stringify({
+              type: "SONG_CHANGED",
+              payload: {
+                roomId,
+                videoId: nextSong.extractedId, // assuming this exists
+                songId: nextSong.id,
+                nextSong,
+                rest,
+              },
+            })
+          );
+        }
+
+        console.log("Sent next song change to WebSocket", nextSong.title);
+
+        
         toast.success("Playing next song...");
-
-        console.log("Current upcomingSongs", upcomingSongs);
-
-        const nextSong = upcomingSongs.shift();
-
-        if (!nextSong) return;
-
-        setCurrentSong(nextSong || null);
-
-        console.log("Next song:", currentSong);
+        console.log("Next song to play:", nextSong);
       } else {
         toast.error("Failed to play next song");
       }
@@ -247,15 +184,104 @@ export default function RoomPageContent({
       console.error("Failed to play next song:", err);
       toast.error("Failed to play next song");
     }
-    // if (socketRef.current?.readyState === WebSocket.OPEN) {
-    //   socketRef.current.send(
-    //     JSON.stringify({
-    //       type: "SONG_DELETED",
-    //       payload: { roomId, songId },
-    //     })
-    //   );
-    // }
   };
+
+  useEffect(() => {
+    if (!socket) return;
+
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+
+      switch (message.type) {
+        case "USER_LIST":
+          setUsersInRoom(message.payload);
+          break;
+
+        case "USER_EVENT":
+          const { userName, action, timestamp } = message.payload;
+          setUserEvents((prev) => [
+            { userName, action, timestamp },
+            ...prev.slice(0, 9),
+          ]);
+          break;
+
+        case "SONG_ADDED":
+          const newSong = message.payload.song as Song;
+
+          if (upcomingSongs.length === 0 && !currentSong) {
+            setCurrentSong(newSong);
+            return;
+          }
+
+          setUpcomingSongs((prev) => {
+            if (
+              prev.some((s) => s.id === newSong.id) ||
+              currentSong?.id === newSong.id
+            ) {
+              return sortSongs(prev);
+            }
+            return sortSongs([...prev, newSong]);
+          });
+          break;
+
+        case "VOTE_CHANGED":
+          fetchUpcomingSongsOnly();
+          break;
+
+        case "SONG_ENDED":
+          const { videoId: endedVideoId } = message.payload;
+
+          if (!isHost) {
+            console.warn(
+              `🚫 Unauthorized SONG_ENDED from ${userId} (not host)`
+            );
+            return;
+          }
+          console.log(`🎵 Song ended for room ${roomId} by ${userId}`);
+
+          if (!currentSong) {
+            console.warn("No current song to check against");
+            return;
+          }
+
+          // Check if it's the current song
+          if (endedVideoId === currentSong?.extractedId) {
+            console.log("Song ended matches current, proceeding to next.");
+            handlePlayNextSong(currentSong.id); // safe because currentSong is still old one
+          }
+          break;
+
+        case "SONG_CHANGED":
+          if (isHost) return;
+
+          console.log("🔁 SONG_CHANGED received:", message.payload, isHost);
+
+          const {  nextSong } = message.payload;
+
+          if (!nextSong) {
+            console.warn("No next song provided in SONG_CHANGED");
+            return;
+          }
+
+          console.log("📡 SONG_CHANGED received:", nextSong.title);
+
+
+
+          setCurrentSong(nextSong);
+          setUpcomingSongs((prev) => prev.filter((s) => s.id !== nextSong.id)); // ensure new reference
+          
+          console.log("Updated current song to:", nextSong.title);
+          break;
+
+          // Remove the nextSong from upcomingSongs if it exists
+          break;
+      }
+    };
+
+    socket.onerror = (event) => {
+      console.error("WebSocket error:", event);
+    };
+  }, [socket, currentSong, upcomingSongs]);
 
   useEffect(() => {
     if (userEvents.length === 0) return;
@@ -266,6 +292,15 @@ export default function RoomPageContent({
     return () => clearTimeout(timer);
   }, [userEvents]);
 
+  const sortSongs = (songs: Song[]) => {
+    return [...songs].sort((a, b) => {
+      if (b.voteCount !== a.voteCount) {
+        return b.voteCount - a.voteCount;
+      }
+      return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+    });
+  };
+
   const handleAddToQueue = async () => {
     if (!youtubeUrl) return;
     try {
@@ -275,11 +310,17 @@ export default function RoomPageContent({
         type: "youtube",
       });
 
-      if (
-        response.status === 200 &&
-        socketRef.current?.readyState === WebSocket.OPEN
-      ) {
-        socketRef.current.send(
+      if (response.status !== 200) {
+        toast.error(response.data.message || "Failed to add song");
+        return;
+      }
+
+      if (upcomingSongs.length === 0 && !currentSong) {
+        setCurrentSong(response.data.song);
+      }
+
+      if (response.status === 200 && socket?.readyState === WebSocket.OPEN) {
+        socket.send(
           JSON.stringify({
             type: "SONG_ADDED",
             payload: {
@@ -306,30 +347,16 @@ export default function RoomPageContent({
         await axios.post("/api/room/song/vote", payload);
       }
 
-      console.log("Vote sent:", { roomId, songId, isVoted });
+      console.log(`Vote ${isVoted ? "removed" : "added"} for:`, songId);
 
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.send(
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(
           JSON.stringify({
             type: "VOTE_CHANGED",
-            payload: { roomId, songId, isVoted: !isVoted }, // !isVoted because we just changed it
+            payload: { roomId, songId, isVoted: !isVoted },
           })
         );
       }
-
-      const res = await axios.get(`/api/room/song/${songId}`, {
-        params: { userId: userId || hostId },
-      });
-
-      const updatedSong = res.data.song;
-
-      console.log("Updated song:", updatedSong);
-
-      setUpcomingSongs((prevSongs) =>
-        sortSongs(
-          prevSongs.map((song) => (song.id === songId ? updatedSong : song))
-        )
-      );
     } catch (err) {
       console.error("Voting error:", err);
       if (axios.isAxiosError(err) && err.response?.status === 409) {
@@ -414,15 +441,22 @@ export default function RoomPageContent({
             <div className="bg-white/5 backdrop-blur-md rounded-xl border border-white/10 p-4 flex flex-col gap-4">
               <YouTubePlayer
                 isHost={isHost}
-                socket={socketRef.current as WebSocket}
+                socket={socket as WebSocket}
                 roomId={roomId}
                 userId={userId || ""}
                 videoId={currentSong?.extractedId || ""}
+                onPlaybackError={() => {
+                  if (isHost && currentSong) {
+                    toast.error("Video playback disabled, skipping...");
+                    handlePlayNextSong(currentSong.id);
+                  }
+                }}
               />
               <div className="flex items-center gap-4">
                 <div className="space-y-1">
                   <h2 className="text-xl font-semibold text-white">
                     {currentSong?.title}
+                    {currentSong?.extractedId}
                   </h2>
                   <p className="text-zinc-400">{currentSong?.artist}</p>
                   <div className="text-sm text-zinc-400 flex items-center gap-2">
@@ -458,40 +492,47 @@ export default function RoomPageContent({
             <h2 className="text-2xl font-bold text-white mb-2">
               Upcoming Songs
             </h2>
-            <div className="grid grid-cols-1 gap-4">
-              {upcomingSongs.map((song) => (
-                <div
-                  key={song.id}
-                  className="bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-md flex gap-4 items-center justify-between hover:scale-[1.01] transition"
-                >
-                  <div className="flex gap-4 items-center">
-                    <Image
-                      width={300}
-                      height={200}
-                      src={song.thumbnail}
-                      alt={song.title}
-                      className="w-16 h-16 rounded-md object-cover"
-                    />
-                    <div>
-                      <p className="font-medium text-white">{song.title}</p>
-                      <p className="text-sm text-zinc-400">{song.artist}</p>
+
+            {upcomingSongs.length === 0 ? (
+              <div className="text-center text-zinc-400 text-sm py-6">
+                No songs in the queue. Add a YouTube link to keep playing!
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {upcomingSongs.map((song) => (
+                  <div
+                    key={song.id}
+                    className="bg-white/5 p-4 rounded-xl border border-white/10 backdrop-blur-md flex gap-4 items-center justify-between hover:scale-[1.01] transition"
+                  >
+                    <div className="flex gap-4 items-center">
+                      <Image
+                        width={300}
+                        height={200}
+                        src={song.thumbnail}
+                        alt={song.title}
+                        className="w-16 h-16 rounded-md object-cover"
+                      />
+                      <div>
+                        <p className="font-medium text-white">{song.title}</p>
+                        <p className="text-sm text-zinc-400">{song.artist}</p>
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-sm text-zinc-300 mb-1">
+                        Votes: {song.voteCount}
+                      </p>
+                      <Button
+                        onClick={() => handleVote(song.id, song.isVoted)}
+                        size="sm"
+                        variant={song.isVoted ? "destructive" : "secondary"}
+                      >
+                        {song.isVoted ? "Unvote" : "Vote"}
+                      </Button>
                     </div>
                   </div>
-                  <div className="text-center">
-                    <p className="text-sm text-zinc-300 mb-1">
-                      Votes: {song.voteCount}
-                    </p>
-                    <Button
-                      onClick={() => handleVote(song.id, song.isVoted)}
-                      size="sm"
-                      variant={song.isVoted ? "destructive" : "secondary"}
-                    >
-                      {song.isVoted ? "Unvote" : "Vote"}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         {showUserList && (

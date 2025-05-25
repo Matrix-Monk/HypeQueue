@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  reactStrictMode: false, // 👈 disable React Strict Mode
   images: {
     domains: ["i.ytimg.com"],
   },
