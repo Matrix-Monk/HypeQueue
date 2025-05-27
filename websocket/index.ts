@@ -47,137 +47,184 @@ function isHostUser(roomId: string, userId: string): boolean {
 
 // Handle messages from the client
 function handleMessage(socket: WebSocket, msg: Message) {
- try {
-  const { type, payload } = msg;
+  try {
+    const { type, payload } = msg;
 
-  switch (type) {
-    case "JOIN_ROOM": {
-      const { roomId, userId, userName, isHost } = payload;
+    switch (type) {
+      case "JOIN_ROOM": {
+        const { roomId, userId, userName, isHost } = payload;
 
-      rooms[roomId] = rooms[roomId] || [];
+        console.log(
+          `🛋️ Room ${roomId} has ${rooms[roomId]?.length} users`,
+          rooms
+        );
 
-      const existing = rooms[roomId].find((c) => c.userId === userId);
+        console.log(
+          `👥 Received join request from ${userName} (${userId}) ${roomId} as ${
+            isHost ? "host" : "guest"
+          }`
+        );
 
-      if (existing) {
-        console.warn(`⚠️ User ${userName} already in room ${roomId}`);
-        return;
-      }
+        rooms[roomId] = rooms[roomId] || [];
 
-      rooms[roomId].push({ socket, roomId, userId, userName, isHost });
+        const existing = rooms[roomId].find((c) => c.userId === userId);
 
-      console.log(`👤 ${userName} joined room ${roomId}`);
-      console.log(`📋 Current users:`, getRoomUserNames(roomId));
+        if (existing) {
+          console.warn(`⚠️ User ${userName} already in room ${roomId}`);
+          return;
+        }
 
-      broadcastToRoom(roomId, {
-        type: "USER_LIST",
-        payload: getRoomUserNames(roomId),
-      });
+        rooms[roomId].push({ socket, roomId, userId, userName, isHost });
 
-      broadcastToRoom(roomId, {
-        type: "USER_EVENT",
-        payload: { userName, action: "joined", timestamp: Date.now() },
-      });
+        const host = rooms[roomId]?.find((c) => c.isHost);
 
-      break;
-    }
+        console.log("found host", host);
 
-    case "SONG_ADDED": {
-      const { roomId, song } = payload;
+        if (host && host.userId !== userId) {
+          console.log(
+            `📢 Notifying host ${host.userName} of new user ${userName} in room ${roomId}`
+          );
 
-      broadcastToRoom(roomId, {
-        type: "SONG_ADDED",
-        payload: { song },
-      });
+          if (host.socket.readyState === WebSocket.OPEN) {
+            console.log(`✅ Sending USER_JOINED to host ${host.userName}`);
 
-      break;
-    }
+            host.socket.send(
+              JSON.stringify({
+                type: "USER_JOINED",
+                payload: {
+                  roomId,
+                  userId,
+                },
+              })
+            );
+          }
+        }
 
-    case "VOTE_CHANGED": {
-      const { roomId, songId, isVoted } = payload;
+        console.log(`👤 ${userName} joined room ${roomId}`);
+        console.log(`📋 Current users:`, getRoomUserNames(roomId));
 
-      broadcastToRoom(roomId, {
-        type: "VOTE_CHANGED",
-        payload: { roomId, songId, isVoted },
-      });
-
-      break;
-    }
-
-    case "SONG_CHANGED": {
-      const { roomId, songId, videoId, nextSong, rest } = payload;
-
-      broadcastToRoom(roomId, {
-        type: "SONG_CHANGED",
-        payload: { roomId, songId, videoId, rest , nextSong },
-      });
-
-      break;
-    }
-
-    case "PLAYER_EVENT": {
-      const { roomId, userId, action, currentTime, videoId } = payload;
-
-      if (!isHostUser(roomId, userId)) {
-        console.warn(`🚫 Unauthorized PLAYER_EVENT from ${userId} (not host)`);
-        return;
-      }
-
-      if (action === "ended") {
-        console.log(`🎵 Song ended for room ${roomId}`);
+        console.log(
+          `🛋️ Room ${roomId} now has ${rooms[roomId]?.length} users`,
+          rooms
+        );
 
         broadcastToRoom(roomId, {
-          type: "SONG_ENDED",
-          payload: { userId, videoId, roomId },
+          type: "USER_LIST",
+          payload: getRoomUserNames(roomId),
         });
+
+        broadcastToRoom(roomId, {
+          type: "USER_EVENT",
+          payload: { userName, action: "joined", timestamp: Date.now() },
+        });
+
+        break;
       }
 
-      broadcastToRoom(roomId, {
-        type: "PLAYER_EVENT",
-        payload: { userId, action, currentTime, videoId },
-      });
+      case "SONG_ADDED": {
+        const { roomId, song } = payload;
 
-      break;
-    }
+        broadcastToRoom(roomId, {
+          type: "SONG_ADDED",
+          payload: { song },
+        });
 
-    case "REQUEST_PLAYER_STATE": {
-      const { roomId, requesterId } = payload;
-
-      const hostClient = rooms[roomId]?.find((c) => c.isHost);
-      if (hostClient && hostClient.socket.readyState === WebSocket.OPEN) {
-        hostClient.socket.send(
-          JSON.stringify({
-            type: "SEND_PLAYER_STATE",
-            payload: { toUserId: requesterId },
-          })
-        );
+        break;
       }
 
-      break;
-    }
+      case "VOTE_CHANGED": {
+        const { roomId, songId, isVoted } = payload;
 
-    case "PLAYER_STATE_RESPONSE": {
-      const { roomId, toUserId, action, currentTime, videoId } = payload;
+        broadcastToRoom(roomId, {
+          type: "VOTE_CHANGED",
+          payload: { roomId, songId, isVoted },
+        });
 
-      const targetClient = rooms[roomId]?.find((c) => c.userId === toUserId);
-      if (targetClient && targetClient.socket.readyState === WebSocket.OPEN) {
-        targetClient.socket.send(
-          JSON.stringify({
-            type: "PLAYER_STATE_RESPONSE",
-            payload: { toUserId, action, currentTime, videoId },
-          })
-        );
+        break;
       }
 
-      break;
-    }
+      case "SONG_CHANGED": {
+        const { roomId, songId, videoId, nextSong, rest } = payload;
 
-    default:
-      console.warn(`⚠️ Unknown message type: ${type}`);
+        broadcastToRoom(roomId, {
+          type: "SONG_CHANGED",
+          payload: { roomId, songId, videoId, rest, nextSong },
+        });
+
+        break;
+      }
+
+      case "PLAYER_EVENT": {
+        const { roomId, userId, action, currentTime, videoId } = payload;
+
+        if (!isHostUser(roomId, userId)) {
+          console.warn(
+            `🚫 Unauthorized PLAYER_EVENT from ${userId} (not host)`
+          );
+          return;
+        }
+
+        if (action === "ended") {
+          console.log(`🎵 Song ended for room ${roomId}`);
+
+          broadcastToRoom(roomId, {
+            type: "SONG_ENDED",
+            payload: { userId, videoId, roomId },
+          });
+        }
+
+        broadcastToRoom(roomId, {
+          type: "PLAYER_EVENT",
+          payload: { userId, action, currentTime, videoId },
+        });
+
+        break;
+      }
+
+      case "REQUEST_PLAYER_STATE": {
+        const { roomId, requesterId } = payload;
+
+        const hostClient = rooms[roomId]?.find((c) => c.isHost);
+        if (hostClient && hostClient.socket.readyState === WebSocket.OPEN) {
+          hostClient.socket.send(
+            JSON.stringify({
+              type: "SEND_PLAYER_STATE",
+              payload: { toUserId: requesterId },
+            })
+          );
+        }
+
+        break;
+      }
+
+      case "PLAYER_STATE_RESPONSE": {
+        const { roomId, toUserId, action, currentTime, videoId } = payload;
+
+        const targetClient = rooms[roomId]?.find((c) => c.userId === toUserId);
+        if (targetClient && targetClient.socket.readyState === WebSocket.OPEN) {
+          targetClient.socket.send(
+            JSON.stringify({
+              type: "PLAYER_STATE_RESPONSE",
+              payload: { toUserId, action, currentTime, videoId },
+            })
+          );
+        }
+
+        break;
+      }
+
+      default:
+        console.warn(`⚠️ Unknown message type: ${type}`);
+    }
+  } catch (err) {
+    console.error("❌ handleMessage error:", err);
+    if (
+      socket.readyState === WebSocket.OPEN ||
+      socket.readyState === WebSocket.CLOSING
+    ) {
+      socket.close();
+    }
   }
- } catch (err) {
-  console.error("❌ handleMessage error:", err);
-  socket.close();
- }
 }
 
 // Handle user disconnection

@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { set } from "zod";
 
 export const useRoomWebSocket = ({
   status,
@@ -12,11 +11,20 @@ export const useRoomWebSocket = ({
   roomId?: string;
   userId?: string;
   userName?: string;
-  isHost: boolean;
+    isHost: boolean;
 }) => {
-  const socketRef = useRef<WebSocket | null>(null);
-  const hasConnectedRef = useRef(false);
+    const hasConnectedRef = useRef(false);
+    const [socket, setSocket] = useState<WebSocket | null>(null);
+
   const [isConnected, setIsConnected] = useState(false);
+
+  console.log("useRoomWebSocket initialized with:", {
+    status,
+    roomId,
+    userId,
+    userName,
+    isHost,
+  });
 
   useEffect(() => {
     if (
@@ -31,39 +39,47 @@ export const useRoomWebSocket = ({
     hasConnectedRef.current = true;
 
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    const socket = new WebSocket(
+    const ws = new WebSocket(
       `${protocol}://${window.location.host}/ws/room`
     );
-    socketRef.current = socket;
 
-    socket.onopen = () => {
+    ws.onopen = () => {
+
       const joinPayload = {
         type: "JOIN_ROOM",
         payload: { roomId, userId, userName, isHost },
       };
-      socket.send(JSON.stringify(joinPayload));
+
+      console.log("Sending JOIN ROOM with:", joinPayload);
+
+      ws.send(JSON.stringify(joinPayload));
       setIsConnected(true);
     };
       
       
 
-    socket.onclose = () => {
+    ws.onclose = () => {
       setIsConnected(false);
-      socketRef.current = null;
       hasConnectedRef.current = false;
     };
+     
+    ws.onerror = (event) => {
+      console.error("WebSocket error:", event);
+    };
+    
+    setSocket(ws);
+
 
     return () => {
-      if (socketRef.current?.readyState === WebSocket.OPEN) {
-        socketRef.current.close(1000, "Component unmounted");
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close(1000, "Component unmounted");
       }
-      socketRef.current = null;
       hasConnectedRef.current = false;
     };
   }, [status, roomId, userId]);
     
   return {
-    socket: socketRef.current,
+    socket,
     isConnected,
   };
 };

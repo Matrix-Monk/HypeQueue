@@ -18,12 +18,14 @@ export default function YouTubePlayer({
   roomId,
   userId,
   onPlaybackError,
-}: // fetchQueue,
+}: 
 Props) {
   const playerRef = useRef<YouTubePlayer | null>(null);
   const [playerReady, setPlayerReady] = useState(false);
   const [videoId, setVideoId] = useState<string>(videoIdProp || "");
   const [isSyncing, setIsSyncing] = useState(false);
+  const [playerHasLoaded, setPlayerHasLoaded] = useState(false);
+
 
   // Keep local state in sync with prop
   useEffect(() => {
@@ -69,6 +71,7 @@ Props) {
       !isHost &&
       playerReady &&
       videoId &&
+      playerHasLoaded &&
       socket?.readyState === WebSocket.OPEN
     ) {
       setIsSyncing(true);
@@ -86,17 +89,40 @@ Props) {
       }, 300);
       return () => clearTimeout(timeout);
     }
-  }, [videoId, playerReady, isHost, socket, roomId, userId]);
+  }, [videoId, playerReady,playerHasLoaded, isHost, socket, roomId, userId]);
 
   // WebSocket sync handling
   useEffect(() => {
-    if (!socket || !videoId) return;
+    if (!socket) return;
 
     const handleMessage = (event: MessageEvent) => {
       const message = JSON.parse(event.data);
       const player = playerRef.current;
 
       if (!player) return;
+
+      console.log("📡 WebSocket message received:", message.type);
+
+      if (isHost && message.type === "USER_JOINED") {
+        const { userId: newUserId } = message.payload;
+
+        console.log("👤 USER_JOINED received:", newUserId);
+
+        // Send current player state to the new user
+        if (socket?.readyState === WebSocket.OPEN) {
+          console.log("📡 Manual sync request sent");
+          socket.send(
+            JSON.stringify({
+              type: "REQUEST_PLAYER_STATE",
+              payload: {
+                roomId,
+                requesterId: userId,
+              },
+            })
+          );
+        }
+        
+      }
 
       if (!isHost && message.type === "SONG_CHANGED") {
         console.log("🔁 SONG_CHANGED received:", message.payload);
@@ -109,14 +135,11 @@ Props) {
         if (newVideoId && newVideoId !== videoId) {
           setIsSyncing(true);
           console.log("🔄 Updating videoId to:", newVideoId);
+          setPlayerHasLoaded(false); // reset before loading new video
+
           setVideoId(newVideoId); // triggers video loading + sync logic
         }
 
-        // Refetch the song queue
-        // if (typeof fetchQueue === "function") {
-        //   console.log("🔄 Fetching updated queue after SONG_CHANGED");
-        //   fetchQueue();
-        // }
 
         // Ask for player state (to sync time & play/pause)
         if (socket.readyState === WebSocket.OPEN) {
@@ -141,7 +164,10 @@ Props) {
         const drift = Math.abs(player.getCurrentTime() - currentTime);
         if (drift > 0.5) player.seekTo(currentTime, true);
 
-        if (action === "play") {
+        if (
+          action === "play" &&
+          player.getPlayerState() !== window.YT.PlayerState.PLAYING
+        ) {
           player.playVideo();
         } else if (action === "pause") {
           player.pauseVideo();
@@ -150,26 +176,6 @@ Props) {
           player.pauseVideo();
         }
       }
-
-      // if (message.type === "PLAYER_EVENT" && !isHost) {
-      //   const { action, currentTime, videoId: vid } = message.payload;
-      //   if (vid !== videoId) return;
-
-      //   const drift = Math.abs(player.getCurrentTime() - currentTime);
-      //   if (drift > 0.5) player.seekTo(currentTime, true);
-
-      //   if (
-      //     action === "play" &&
-      //     player.getPlayerState() !== window.YT.PlayerState.PLAYING
-      //   ) {
-      //     player.playVideo();
-      //   } else if (action === "pause") {
-      //     player.pauseVideo();
-      //   } else if (action === "ended") {
-      //     player.seekTo(0, true);
-      //     player.pauseVideo();
-      //   }
-      // }
 
       if (isHost && message.type === "SEND_PLAYER_STATE") {
         const { toUserId } = message.payload;
@@ -261,6 +267,14 @@ Props) {
     const player = event.target;
     const state = player.getPlayerState();
 
+    if (
+      !playerHasLoaded &&
+      (state === window.YT.PlayerState.BUFFERING ||
+        state === window.YT.PlayerState.PLAYING)
+    ) {
+      setPlayerHasLoaded(true);
+    }
+
     if (!isHost || !socket || socket.readyState !== WebSocket.OPEN) return;
 
     if (
@@ -343,6 +357,8 @@ Props) {
           }}
         />
       )}
+
+      
 
       {isSyncing && !isHost && (
         <div className="absolute inset-0 z-20 bg-black/50 text-white flex items-center justify-center text-xl">

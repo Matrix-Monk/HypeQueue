@@ -21,9 +21,31 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
 
   const { name, hostId } = room;
 
+
+  const host = await prisma.user.findUnique({
+    where: {
+      id: hostId,
+    },
+    select: {
+      name: true,
+    },
+  });
+
+  if (!host) {
+    toast.error("Host not found");
+    return;
+  }
+
+  const { name: hostName } = host;
+
   return (
     <div>
-      <RoomPageContent roomId={roomId} name={name} hostId={hostId} />
+      <RoomPageContent
+        roomId={roomId}
+        name={name}
+        hostId={hostId}
+        hostName={hostName ?? "Unknown Host"}
+      />
     </div>
   );
 }
